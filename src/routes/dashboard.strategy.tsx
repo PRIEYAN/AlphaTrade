@@ -42,6 +42,7 @@ function StrategyPage() {
           },
           guardrails: {
             ...guardrails, killSwitch, tradesToday: 6, spentTodayUsd: 240, drawdownPct: 3,
+            portfolioValueUsd: 19450,
           },
         }),
       });

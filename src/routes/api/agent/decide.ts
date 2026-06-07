@@ -32,6 +32,7 @@ const requestSchema = z.object({
     tradesToday: z.number().default(0),
     spentTodayUsd: z.number().default(0),
     drawdownPct: z.number().default(0),
+    portfolioValueUsd: z.number().default(0),
   }),
   sessionId: z.string().optional(),
 });
@@ -54,11 +55,13 @@ export const Route = createFileRoute("/api/agent/decide")({
         }
 
         const g = parsed.data.guardrails as Guardrails;
+        // Kill switch short-circuits before any Groq call or x402 payment.
         if (g.killSwitch) {
           const hold = safeHoldFallback("Kill switch engaged — agent paused.");
+          const reason = "Kill switch is engaged — all execution blocked";
           return Response.json({
             decision: hold,
-            validation: { approved: false, decision: hold, reason: "Kill switch is engaged" },
+            validation: { approved: false, decision: hold, reason, reasons: [reason] },
             raw: null,
           });
         }

@@ -1,19 +1,17 @@
 import { createStart, createMiddleware } from "@tanstack/react-start";
 
-import { renderErrorPage } from "./lib/error-page";
-
+// Global request middleware: log unexpected server errors, then let TanStack
+// Start's own error handling (errorComponent / notFound) render the response.
 const errorMiddleware = createMiddleware().server(async ({ next }) => {
   try {
     return await next();
   } catch (error) {
+    // Re-throw framework redirects / typed HTTP errors untouched.
     if (error != null && typeof error === "object" && "statusCode" in error) {
       throw error;
     }
     console.error(error);
-    return new Response(renderErrorPage(), {
-      status: 500,
-      headers: { "content-type": "text/html; charset=utf-8" },
-    });
+    throw error;
   }
 });
 

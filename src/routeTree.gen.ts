@@ -15,9 +15,11 @@ import { Route as DashboardIndexRouteImport } from './routes/dashboard.index'
 import { Route as DashboardStrategyRouteImport } from './routes/dashboard.strategy'
 import { Route as DashboardGuardrailsRouteImport } from './routes/dashboard.guardrails'
 import { Route as DashboardActivityRouteImport } from './routes/dashboard.activity'
+import { Route as ApiSignalsRouteImport } from './routes/api/signals'
 import { Route as ApiTwakRegisterRouteImport } from './routes/api/twak/register'
 import { Route as ApiTwakPingRouteImport } from './routes/api/twak/ping'
 import { Route as ApiTwakBalanceRouteImport } from './routes/api/twak/balance'
+import { Route as ApiChainTxsRouteImport } from './routes/api/chain/txs'
 import { Route as ApiAgentDecideRouteImport } from './routes/api/agent/decide'
 
 const DashboardRoute = DashboardRouteImport.update({
@@ -50,6 +52,11 @@ const DashboardActivityRoute = DashboardActivityRouteImport.update({
   path: '/activity',
   getParentRoute: () => DashboardRoute,
 } as any)
+const ApiSignalsRoute = ApiSignalsRouteImport.update({
+  id: '/api/signals',
+  path: '/api/signals',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiTwakRegisterRoute = ApiTwakRegisterRouteImport.update({
   id: '/api/twak/register',
   path: '/api/twak/register',
@@ -65,6 +72,11 @@ const ApiTwakBalanceRoute = ApiTwakBalanceRouteImport.update({
   path: '/api/twak/balance',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiChainTxsRoute = ApiChainTxsRouteImport.update({
+  id: '/api/chain/txs',
+  path: '/api/chain/txs',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAgentDecideRoute = ApiAgentDecideRouteImport.update({
   id: '/api/agent/decide',
   path: '/api/agent/decide',
@@ -74,22 +86,26 @@ const ApiAgentDecideRoute = ApiAgentDecideRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRouteWithChildren
+  '/api/signals': typeof ApiSignalsRoute
   '/dashboard/activity': typeof DashboardActivityRoute
   '/dashboard/guardrails': typeof DashboardGuardrailsRoute
   '/dashboard/strategy': typeof DashboardStrategyRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/api/agent/decide': typeof ApiAgentDecideRoute
+  '/api/chain/txs': typeof ApiChainTxsRoute
   '/api/twak/balance': typeof ApiTwakBalanceRoute
   '/api/twak/ping': typeof ApiTwakPingRoute
   '/api/twak/register': typeof ApiTwakRegisterRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/signals': typeof ApiSignalsRoute
   '/dashboard/activity': typeof DashboardActivityRoute
   '/dashboard/guardrails': typeof DashboardGuardrailsRoute
   '/dashboard/strategy': typeof DashboardStrategyRoute
   '/dashboard': typeof DashboardIndexRoute
   '/api/agent/decide': typeof ApiAgentDecideRoute
+  '/api/chain/txs': typeof ApiChainTxsRoute
   '/api/twak/balance': typeof ApiTwakBalanceRoute
   '/api/twak/ping': typeof ApiTwakPingRoute
   '/api/twak/register': typeof ApiTwakRegisterRoute
@@ -98,11 +114,13 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRouteWithChildren
+  '/api/signals': typeof ApiSignalsRoute
   '/dashboard/activity': typeof DashboardActivityRoute
   '/dashboard/guardrails': typeof DashboardGuardrailsRoute
   '/dashboard/strategy': typeof DashboardStrategyRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/api/agent/decide': typeof ApiAgentDecideRoute
+  '/api/chain/txs': typeof ApiChainTxsRoute
   '/api/twak/balance': typeof ApiTwakBalanceRoute
   '/api/twak/ping': typeof ApiTwakPingRoute
   '/api/twak/register': typeof ApiTwakRegisterRoute
@@ -112,22 +130,26 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/dashboard'
+    | '/api/signals'
     | '/dashboard/activity'
     | '/dashboard/guardrails'
     | '/dashboard/strategy'
     | '/dashboard/'
     | '/api/agent/decide'
+    | '/api/chain/txs'
     | '/api/twak/balance'
     | '/api/twak/ping'
     | '/api/twak/register'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/api/signals'
     | '/dashboard/activity'
     | '/dashboard/guardrails'
     | '/dashboard/strategy'
     | '/dashboard'
     | '/api/agent/decide'
+    | '/api/chain/txs'
     | '/api/twak/balance'
     | '/api/twak/ping'
     | '/api/twak/register'
@@ -135,11 +157,13 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/dashboard'
+    | '/api/signals'
     | '/dashboard/activity'
     | '/dashboard/guardrails'
     | '/dashboard/strategy'
     | '/dashboard/'
     | '/api/agent/decide'
+    | '/api/chain/txs'
     | '/api/twak/balance'
     | '/api/twak/ping'
     | '/api/twak/register'
@@ -148,7 +172,9 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DashboardRoute: typeof DashboardRouteWithChildren
+  ApiSignalsRoute: typeof ApiSignalsRoute
   ApiAgentDecideRoute: typeof ApiAgentDecideRoute
+  ApiChainTxsRoute: typeof ApiChainTxsRoute
   ApiTwakBalanceRoute: typeof ApiTwakBalanceRoute
   ApiTwakPingRoute: typeof ApiTwakPingRoute
   ApiTwakRegisterRoute: typeof ApiTwakRegisterRoute
@@ -198,6 +224,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardActivityRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/api/signals': {
+      id: '/api/signals'
+      path: '/api/signals'
+      fullPath: '/api/signals'
+      preLoaderRoute: typeof ApiSignalsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/twak/register': {
       id: '/api/twak/register'
       path: '/api/twak/register'
@@ -217,6 +250,13 @@ declare module '@tanstack/react-router' {
       path: '/api/twak/balance'
       fullPath: '/api/twak/balance'
       preLoaderRoute: typeof ApiTwakBalanceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/chain/txs': {
+      id: '/api/chain/txs'
+      path: '/api/chain/txs'
+      fullPath: '/api/chain/txs'
+      preLoaderRoute: typeof ApiChainTxsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/agent/decide': {
@@ -250,7 +290,9 @@ const DashboardRouteWithChildren = DashboardRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardRoute: DashboardRouteWithChildren,
+  ApiSignalsRoute: ApiSignalsRoute,
   ApiAgentDecideRoute: ApiAgentDecideRoute,
+  ApiChainTxsRoute: ApiChainTxsRoute,
   ApiTwakBalanceRoute: ApiTwakBalanceRoute,
   ApiTwakPingRoute: ApiTwakPingRoute,
   ApiTwakRegisterRoute: ApiTwakRegisterRoute,

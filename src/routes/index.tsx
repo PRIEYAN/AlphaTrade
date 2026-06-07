@@ -2,12 +2,12 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import {
   ArrowRight, Shield, Bot, Zap, Activity, KeyRound, FileCheck2,
-  Sparkles, Wallet, ChevronDown, Send,
+  Sparkles, ChevronDown, Send,
 } from "lucide-react";
 import { BrutalCard, StickerTag } from "@/components/brutal";
 import { Marquee } from "@/components/marquee";
 import { AnimatedNumber } from "@/components/animated-number";
-import { useApp } from "@/lib/store";
+import { WalletButton } from "@/components/wallet-button";
 import { config } from "@/lib/config";
 import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
@@ -46,7 +46,6 @@ function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: nu
 }
 
 function Navbar() {
-  const { wallet, connect } = useApp();
   return (
     <header className="sticky top-0 z-50 border-b-[3px] border-ink bg-paper/95 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
@@ -61,18 +60,9 @@ function Navbar() {
           <a href="#faq" className="hover:text-pink">FAQ</a>
         </nav>
         <div className="flex items-center gap-2">
-          {wallet.connected ? (
-            <span className="hidden sm:inline-flex border-brutal bg-lime px-3 py-2 font-mono text-xs shadow-brutal-sm">
-              {wallet.address}
-            </span>
-          ) : (
-            <button
-              onClick={connect}
-              className="hidden sm:inline-flex items-center gap-2 border-brutal bg-card px-3 py-2 font-display text-sm uppercase shadow-brutal-sm hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all"
-            >
-              <Wallet className="size-4" /> Connect Wallet
-            </button>
-          )}
+          <div className="hidden sm:block">
+            <WalletButton />
+          </div>
           <Link
             to="/dashboard"
             className="inline-flex items-center gap-2 border-brutal bg-pink px-3 py-2 font-display text-sm uppercase shadow-brutal-sm hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all"

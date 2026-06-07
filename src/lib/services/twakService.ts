@@ -4,7 +4,6 @@
 // Consume these from server routes (src/routes/api/twak/*) — never from a
 // client component, or the secret would be bundled for every visitor.
 import { twSignedFetch, twakConfigured, TwakError } from "./twClient";
-import { mockBalances } from "@/lib/mock/mockData";
 
 const AGENT_ADDRESS = process.env.TWAK_AGENT_ADDRESS || "";
 const COIN = process.env.TWAK_COIN || "60"; // SLIP44 id; 60 = EVM (Ethereum / BSC)
@@ -81,12 +80,12 @@ export const twakService = {
 
   /**
    * Portfolio-shaped balances for the dashboard. Live native balance when
-   * configured; mock data otherwise so local UI still renders. `live` tells the
-   * caller which it is — never silently presents mock as real.
+   * configured; an EMPTY list otherwise (no mock). `live` tells the caller
+   * whether the data is real.
    */
   async getBalances(): Promise<{ live: boolean; balances: Balance[]; raw?: unknown }> {
     if (!twakConfigured() || !AGENT_ADDRESS) {
-      return { live: false, balances: mockBalances };
+      return { live: false, balances: [] };
     }
     const { balance, symbol, raw } = await this.getNativeBalance();
     // USD valuation needs a price endpoint that isn't documented yet, so usd: 0.

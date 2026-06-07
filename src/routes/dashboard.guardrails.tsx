@@ -4,7 +4,7 @@ import { useApp } from "@/lib/store";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { allowedTokens } from "@/lib/mock/mockData";
+import { allowedTokens } from "@/lib/tokens";
 import { toast } from "sonner";
 import { CheckCircle2, AlertTriangle } from "lucide-react";
 

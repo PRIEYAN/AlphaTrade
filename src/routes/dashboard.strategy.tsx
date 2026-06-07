@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { BrutalCard, StickerTag } from "@/components/brutal";
 import { useState } from "react";
 import { useApp } from "@/lib/store";
-import { cmcService } from "@/lib/services/cmcService";
+import { fetchSignals } from "@/lib/services/cmcService";
 import { useQuery } from "@tanstack/react-query";
 import { Sparkles, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -23,9 +23,11 @@ function StrategyPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<DecisionResp | null>(null);
 
-  const fg = useQuery({ queryKey: ["fg"], queryFn: () => cmcService.getFearAndGreed() });
-  const funding = useQuery({ queryKey: ["funding"], queryFn: () => cmcService.getFundingRates() });
-  const sentiment = useQuery({ queryKey: ["sentiment"], queryFn: () => cmcService.getSentiment() });
+  const signalsQ = useQuery({ queryKey: ["signals"], queryFn: fetchSignals });
+  const signals = signalsQ.data;
+  const fg = signals?.fearGreed ?? null;
+  const funding = signals?.funding ?? null;
+  const sentiment = signals?.sentiment ?? null;
 
   const run = async () => {
     setLoading(true);
@@ -36,13 +38,16 @@ function StrategyPage() {
         body: JSON.stringify({
           strategy,
           signals: {
-            fearGreed: sources.fg ? fg.data : undefined,
-            funding: sources.funding ? funding.data : undefined,
-            sentiment: sources.sentiment ? sentiment.data : undefined,
+            fearGreed: sources.fg ? fg ?? undefined : undefined,
+            funding: sources.funding ? funding ?? undefined : undefined,
+            sentiment: sources.sentiment ? sentiment ?? undefined : undefined,
           },
           guardrails: {
-            ...guardrails, killSwitch, tradesToday: 6, spentTodayUsd: 240, drawdownPct: 3,
-            portfolioValueUsd: 19450,
+            // No persistence yet → real per-day counters are unknown; send 0
+            // rather than fabricated activity. Portfolio value 0 skips the USD
+            // spend cap (it can't be evaluated without a price feed).
+            ...guardrails, killSwitch, tradesToday: 0, spentTodayUsd: 0, drawdownPct: 0,
+            portfolioValueUsd: 0,
           },
         }),
       });
@@ -112,28 +117,52 @@ function StrategyPage() {
 
         <BrutalCard className="p-5 space-y-4" tone="cyan">
           <div className="font-display uppercase">Market Signals</div>
-          <Gauge label="Fear & Greed" value={fg.data?.value ?? 0} sub={fg.data?.label ?? "—"} />
-          <div>
-            <div className="font-display text-xs uppercase mb-1">Funding rates</div>
-            <table className="w-full text-xs font-mono">
-              <tbody>
-                {(funding.data ?? []).map((r) => (
-                  <tr key={r.symbol} className="border-t border-ink/20">
-                    <td className="py-1 font-display">{r.symbol}</td>
-                    <td className={`text-right ${r.rate >= 0 ? "" : "text-destructive"}`}>{(r.rate * 100).toFixed(3)}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div>
-            <div className="font-display text-xs uppercase mb-1">Sentiment</div>
-            <ul className="text-xs font-mono space-y-1">
-              {(sentiment.data ?? []).map((s) => (
-                <li key={s.symbol} className="flex justify-between"><span>{s.symbol}</span><span>{s.score.toFixed(2)}</span></li>
-              ))}
-            </ul>
-          </div>
+          {signalsQ.isLoading ? (
+            <div className="text-xs font-mono text-ink/60 flex items-center gap-2"><Loader2 className="size-3 animate-spin" /> Loading live signals…</div>
+          ) : !signals?.configured ? (
+            <div className="border-2 border-dashed border-ink/40 p-4 text-xs font-mono text-ink/70">
+              Live signals not configured. Set <span className="font-bold">CMC_AGENT_API_KEY</span> on the server to pull real Fear &amp; Greed data. No mock numbers are shown.
+            </div>
+          ) : (
+            <>
+              {fg ? (
+                <Gauge label="Fear & Greed" value={fg.value} sub={fg.label} />
+              ) : (
+                <div className="text-xs font-mono text-ink/60">
+                  Fear &amp; Greed unavailable{signals.error ? `: ${signals.error}` : ""}.
+                </div>
+              )}
+              <div>
+                <div className="font-display text-xs uppercase mb-1">Funding rates</div>
+                {funding && funding.length ? (
+                  <table className="w-full text-xs font-mono">
+                    <tbody>
+                      {funding.map((r) => (
+                        <tr key={r.symbol} className="border-t border-ink/20">
+                          <td className="py-1 font-display">{r.symbol}</td>
+                          <td className={`text-right ${r.rate >= 0 ? "" : "text-destructive"}`}>{(r.rate * 100).toFixed(3)}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="text-[11px] font-mono text-ink/50">No funding-rate source wired.</div>
+                )}
+              </div>
+              <div>
+                <div className="font-display text-xs uppercase mb-1">Sentiment</div>
+                {sentiment && sentiment.length ? (
+                  <ul className="text-xs font-mono space-y-1">
+                    {sentiment.map((s) => (
+                      <li key={s.symbol} className="flex justify-between"><span>{s.symbol}</span><span>{s.score.toFixed(2)}</span></li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="text-[11px] font-mono text-ink/50">No sentiment source wired.</div>
+                )}
+              </div>
+            </>
+          )}
         </BrutalCard>
       </div>
     </div>

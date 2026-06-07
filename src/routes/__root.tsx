@@ -8,7 +8,9 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import { type ReactNode } from "react";
+import { WagmiProvider } from "wagmi";
 
+import { wagmiConfig } from "@/lib/wagmi";
 import appCss from "../styles.css?url";
 import { Toaster } from "sonner";
 
@@ -97,19 +99,21 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   return (
-    <QueryClientProvider client={queryClient}>
-      <Outlet />
-      <Toaster
-        position="bottom-right"
-        toastOptions={{
-          style: {
-            border: "3px solid #0a0a0a",
-            borderRadius: 0,
-            boxShadow: "5px 5px 0 0 #0a0a0a",
-            fontFamily: "Space Grotesk, sans-serif",
-          },
-        }}
-      />
-    </QueryClientProvider>
+    <WagmiProvider config={wagmiConfig}>
+      <QueryClientProvider client={queryClient}>
+        <Outlet />
+        <Toaster
+          position="bottom-right"
+          toastOptions={{
+            style: {
+              border: "3px solid #0a0a0a",
+              borderRadius: 0,
+              boxShadow: "5px 5px 0 0 #0a0a0a",
+              fontFamily: "Space Grotesk, sans-serif",
+            },
+          }}
+        />
+      </QueryClientProvider>
+    </WagmiProvider>
   );
 }

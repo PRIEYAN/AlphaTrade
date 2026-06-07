@@ -1,11 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { BrutalCard, StickerTag } from "@/components/brutal";
-import { AnimatedNumber } from "@/components/animated-number";
-import { mockPortfolioSeries, mockAllocation } from "@/lib/mock/mockData";
-import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis, PieChart, Pie, Cell } from "recharts";
 import { useApp } from "@/lib/store";
-import { Play, Square, Power, Zap } from "lucide-react";
-import { useState } from "react";
+import { WalletButton } from "@/components/wallet-button";
+import { useAccount, useBalance } from "wagmi";
+import { bsc } from "wagmi/chains";
+import { formatUnits } from "viem";
+import { Play, Square, Power, Zap, LineChart, PieChart, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/dashboard/")({
@@ -13,9 +13,10 @@ export const Route = createFileRoute("/dashboard/")({
 });
 
 function Overview() {
-  const { running, setRunning, autonomous, setAutonomous, killSwitch, setKill } = useApp();
-  const [tf, setTf] = useState<"24h" | "7d" | "30d">("30d");
-  const series = tf === "24h" ? mockPortfolioSeries.slice(-2) : tf === "7d" ? mockPortfolioSeries.slice(-7) : mockPortfolioSeries;
+  const { running, setRunning, autonomous, setAutonomous, killSwitch, setKill, guardrails } = useApp();
+  const { address, isConnected } = useAccount();
+  const { data: bal } = useBalance({ address, chainId: bsc.id, query: { enabled: isConnected } });
+  const bnb = bal ? Number(formatUnits(bal.value, bal.decimals)) : null;
 
   return (
     <div className="space-y-6">
@@ -27,66 +28,48 @@ function Overview() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi label="Portfolio Value" value={<><span className="text-2xl">$</span><AnimatedNumber value={19450} /></>} tone="paper" />
-        <Kpi label="24h PnL %" value={<>+<AnimatedNumber value={4.8} suffix="%" /></>} tone="lime" />
-        <Kpi label="Total PnL %" value={<>+<AnimatedNumber value={28.3} suffix="%" /></>} tone="pink" />
-        <Kpi label="Active Since" value={<><AnimatedNumber value={42} suffix=" days" /></>} tone="cyan" />
+        <Kpi
+          label="Wallet (BNB)"
+          tone="paper"
+          value={isConnected ? (bnb !== null ? bnb.toFixed(4) : "…") : "—"}
+          sub={isConnected ? "live on-chain" : "not connected"}
+        />
+        <Kpi label="Network" tone="lime" value="BSC · 56" sub="BNB Smart Chain" />
+        <Kpi
+          label="Agent"
+          tone="pink"
+          value={killSwitch ? "PAUSED" : running ? "RUNNING" : "STOPPED"}
+          sub={autonomous ? "autonomous" : "manual"}
+        />
+        <Kpi label="Allowlist" tone="cyan" value={`${guardrails.allowlist.length}`} sub="tokens enabled" />
       </div>
 
       <div className="grid lg:grid-cols-3 gap-5">
         <BrutalCard className="lg:col-span-2 p-5">
-          <div className="flex items-center justify-between">
-            <div className="font-display uppercase">Portfolio</div>
-            <div className="flex gap-1">
-              {(["24h", "7d", "30d"] as const).map((t) => (
-                <button key={t} onClick={() => setTf(t)}
-                  className={`border-brutal px-2 py-1 font-display text-xs uppercase shadow-brutal-sm ${tf === t ? "bg-pink translate-x-[2px] translate-y-[2px] shadow-none" : "bg-paper hover:bg-lime"}`}>
-                  {t}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="h-64 mt-4">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={series}>
-                <defs>
-                  <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="oklch(0.68 0.27 6)" stopOpacity={0.7} />
-                    <stop offset="100%" stopColor="oklch(0.68 0.27 6)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="date" stroke="#0a0a0a" style={{ fontFamily: "JetBrains Mono", fontSize: 11 }} />
-                <YAxis stroke="#0a0a0a" style={{ fontFamily: "JetBrains Mono", fontSize: 11 }} />
-                <Tooltip contentStyle={{ background: "#fff", border: "3px solid #0a0a0a", borderRadius: 0, fontFamily: "JetBrains Mono" }} />
-                <Area type="monotone" dataKey="value" stroke="#0a0a0a" strokeWidth={3} fill="url(#g)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
+          <div className="font-display uppercase">Portfolio history</div>
+          <EmptyState
+            icon={LineChart}
+            title="No history recorded yet"
+            body="Portfolio value over time is built from on-chain balance snapshots. Snapshot recording isn't enabled (no datastore), so there's nothing to chart — by design, no placeholder numbers."
+          />
         </BrutalCard>
 
         <BrutalCard className="p-5">
           <div className="font-display uppercase">Allocation</div>
-          <div className="h-48 mt-2">
-            <ResponsiveContainer>
-              <PieChart>
-                <Pie data={mockAllocation} dataKey="value" innerRadius={40} outerRadius={70} strokeWidth={3} stroke="#0a0a0a">
-                  {mockAllocation.map((d, i) => <Cell key={i} fill={d.color.startsWith("var") ? ["#ff2ea6", "#c8ff2e", "#ff7a1a", "#34d2ff"][i] : d.color} />)}
-                </Pie>
-                <Tooltip contentStyle={{ background: "#fff", border: "3px solid #0a0a0a", borderRadius: 0 }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <ul className="mt-2 space-y-1 text-sm font-mono">
-            {mockAllocation.map((a, i) => (
-              <li key={a.name} className="flex justify-between">
-                <span className="flex items-center gap-2">
-                  <span className="size-3 border border-ink" style={{ background: ["#ff2ea6", "#c8ff2e", "#ff7a1a", "#34d2ff"][i] }} />
-                  {a.name}
-                </span>
-                <span>{a.value}%</span>
-              </li>
-            ))}
-          </ul>
+          {!isConnected ? (
+            <EmptyState
+              icon={Wallet}
+              title="Connect a wallet"
+              body="Token allocation is read from your real on-chain balances."
+              action={<WalletButton />}
+            />
+          ) : (
+            <EmptyState
+              icon={PieChart}
+              title="Native balance only"
+              body={`${bnb !== null ? bnb.toFixed(4) : "…"} BNB held. Per-token allocation needs a token-list + price source, which isn't wired yet.`}
+            />
+          )}
         </BrutalCard>
       </div>
 
@@ -118,23 +101,49 @@ function Overview() {
           </div>
         </div>
         <div className="mt-4 grid sm:grid-cols-3 gap-3 text-paper">
-          <Mini label="Decisions today" value="14" />
-          <Mini label="Trades today" value="6" />
-          <Mini label="Rejected" value="3" />
+          <Mini label="Decisions today" value="—" />
+          <Mini label="Trades today" value="—" />
+          <Mini label="Rejected" value="—" />
+        </div>
+        <div className="mt-2 text-[11px] font-mono text-paper/50">
+          Counters are blank until decision/trade logging is persisted — no fabricated activity.
         </div>
       </BrutalCard>
     </div>
   );
 }
 
-function Kpi({ label, value, tone }: { label: string; value: React.ReactNode; tone: "paper" | "pink" | "lime" | "cyan" }) {
+function EmptyState({
+  icon: Icon,
+  title,
+  body,
+  action,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  body: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="mt-4 border-2 border-dashed border-ink/30 p-6 flex flex-col items-center text-center gap-2">
+      <Icon className="size-8 text-ink/40" />
+      <div className="font-display uppercase text-sm">{title}</div>
+      <p className="text-xs text-ink/60 font-mono max-w-xs">{body}</p>
+      {action && <div className="mt-2">{action}</div>}
+    </div>
+  );
+}
+
+function Kpi({ label, value, sub, tone }: { label: string; value: React.ReactNode; sub?: string; tone: "paper" | "pink" | "lime" | "cyan" }) {
   return (
     <BrutalCard tone={tone} className="p-4">
       <div className="font-display text-xs uppercase tracking-wider">{label}</div>
       <div className="font-display text-3xl mt-2">{value}</div>
+      {sub && <div className="font-mono text-[10px] uppercase mt-1 opacity-60">{sub}</div>}
     </BrutalCard>
   );
 }
+
 function Mini({ label, value }: { label: string; value: string }) {
   return (
     <div className="border-2 border-paper p-3">

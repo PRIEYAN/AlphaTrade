@@ -1,6 +1,8 @@
 import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
-import { LayoutDashboard, Shield, Sparkles, Activity, Wallet, Power, ArrowLeft } from "lucide-react";
+import { LayoutDashboard, Shield, Sparkles, Activity, Power, ArrowLeft } from "lucide-react";
+import { useAccount } from "wagmi";
 import { useApp } from "@/lib/store";
+import { WalletButton } from "@/components/wallet-button";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -17,7 +19,8 @@ const navItems = [
 ];
 
 function DashboardLayout() {
-  const { wallet, connect, disconnect, killSwitch, setKill } = useApp();
+  const { killSwitch, setKill } = useApp();
+  const { isConnected } = useAccount();
   const loc = useLocation();
 
   return (
@@ -41,19 +44,7 @@ function DashboardLayout() {
                 killSwitch ? "bg-destructive text-destructive-foreground" : "bg-card hover:bg-destructive hover:text-destructive-foreground")}>
               <Power className="size-4" /> {killSwitch ? "KILLED" : "Kill switch"}
             </button>
-            {wallet.connected ? (
-              <div className="flex items-center gap-2">
-                <span className="hidden sm:inline-flex border-brutal bg-lime px-3 py-2 font-mono text-xs shadow-brutal-sm">
-                  {wallet.balanceBnb} BNB · {wallet.address}
-                </span>
-                <button onClick={disconnect} className="border-brutal bg-card px-3 py-2 font-display text-xs uppercase shadow-brutal-sm">Disconnect</button>
-              </div>
-            ) : (
-              <button onClick={() => { connect(); toast.success("Wallet connected"); }}
-                className="inline-flex items-center gap-2 border-brutal bg-pink px-3 py-2 font-display text-sm uppercase shadow-brutal-sm">
-                <Wallet className="size-4" /> Connect Wallet
-              </button>
-            )}
+            <WalletButton />
           </div>
         </div>
       </header>
@@ -80,14 +71,13 @@ function DashboardLayout() {
         </aside>
 
         <main className="flex-1 p-4 md:p-8">
-          {!wallet.connected && (
-            <div className="mb-6 border-brutal bg-orange p-4 shadow-brutal-sm flex items-center justify-between">
+          {!isConnected && (
+            <div className="mb-6 border-brutal bg-orange p-4 shadow-brutal-sm flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="font-display uppercase">Connect a wallet to continue</div>
-                <div className="text-sm">BSC (chain 56) only. Signing flows through Trust Wallet Agent Kit.</div>
+                <div className="text-sm">BNB Smart Chain (56) only. Signing flows through Trust Wallet Agent Kit.</div>
               </div>
-              <button onClick={() => { connect(); toast.success("Wallet connected"); }}
-                className="border-brutal bg-ink text-paper px-3 py-2 font-display text-xs uppercase shadow-brutal-sm">Connect</button>
+              <WalletButton />
             </div>
           )}
           <Outlet />

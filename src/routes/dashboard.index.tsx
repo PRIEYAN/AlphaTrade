@@ -5,6 +5,7 @@ import { WalletButton } from "@/components/wallet-button";
 import { useAccount, useBalance } from "wagmi";
 import { bsc } from "wagmi/chains";
 import { formatUnits } from "viem";
+import { useQuery } from "@tanstack/react-query";
 import { Play, Square, Power, Zap, LineChart, PieChart, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
@@ -17,6 +18,15 @@ function Overview() {
   const { address, isConnected } = useAccount();
   const { data: bal } = useBalance({ address, chainId: bsc.id, query: { enabled: isConnected } });
   const bnb = bal ? Number(formatUnits(bal.value, bal.decimals)) : null;
+  // Live BNB Smart Chain context (real RPC reads via the BNB agent layer).
+  const netCtx = useQuery({
+    queryKey: ["bnb-context"],
+    queryFn: async () => {
+      const r = await fetch("/api/bnb/context");
+      return (await r.json()) as { ok: boolean; blockNumber?: number; gasPriceGwei?: number };
+    },
+    refetchInterval: 15000,
+  });
 
   return (
     <div className="space-y-6">
@@ -34,7 +44,16 @@ function Overview() {
           value={isConnected ? (bnb !== null ? bnb.toFixed(4) : "…") : "—"}
           sub={isConnected ? "live on-chain" : "not connected"}
         />
-        <Kpi label="Network" tone="lime" value="BSC · 56" sub="BNB Smart Chain" />
+        <Kpi
+          label="Network"
+          tone="lime"
+          value="BSC · 56"
+          sub={
+            netCtx.data?.ok
+              ? `blk ${netCtx.data.blockNumber} · ${netCtx.data.gasPriceGwei?.toFixed(2)} gwei`
+              : "BNB Smart Chain"
+          }
+        />
         <Kpi
           label="Agent"
           tone="pink"

@@ -1,0 +1,300 @@
+===============================================================================
+ ALPHATRADE — SETUP, RUN, DEPLOY & OPERATIONS GUIDE
+===============================================================================
+
+AlphaTrade is a self-custodial autonomous crypto-trading agent for BNB Smart
+Chain (BSC, chain id 56). It reads market signals, asks an LLM for a proposal,
+re-validates that proposal against hard-coded guardrails, and only then signs a
+transaction — keys never leave the user's wallet.
+
+There is NO mock data anywhere in the app. Every panel shows real data when the
+relevant integration is configured, or an honest "not configured / no data"
+state otherwise. The app builds and runs under every configuration; features
+light up as you add credentials.
+
+-------------------------------------------------------------------------------
+ 1. THE FOUR AGENT / INTELLIGENCE LAYERS
+-------------------------------------------------------------------------------
+
+1) BNB Smart Chain (on-chain layer) — viem
+   - Real RPC reads (block height, gas price) via viem against the BSC RPC.
+   - Code: src/lib/services/bnbAgentService.ts  ->  GET /api/bnb/context
+   - Surfaced live on the Overview "Network" card and fed into the AI decision
+     as an on-chain signal. NO API KEY REQUIRED (public RPC).
+
+2) CoinMarketCap (CMC) signals layer
+   - Live Fear & Greed from CoinMarketCap; server-side key, never in the browser.
+   - Code: src/routes/api/signals.ts (server)  +  src/lib/services/cmcService.ts
+   - Requires CMC_AGENT_API_KEY. Without it: honest "signals not configured".
+
+3) Trust Wallet Agent Kit (TWAK) — execution / signing layer
+   - HMAC-SHA256 signed REST client; signing happens server-side only.
+   - Code: src/lib/services/twClient.ts (signing) + twakService.ts (operations)
+   - Routes: /api/twak/ping, /api/twak/balance, /api/twak/register, /api/twak/swap
+   - Requires TW_ACCESS_ID + TW_HMAC_SECRET. Balance/register/swap degrade to
+     honest errors (not fake success) when unconfigured or when an endpoint
+     path is not yet set.
+
+4) Groq — AI decision engine
+   - Llama-3.3-70B class model returns a STRICT JSON proposal. Advisory only.
+   - Code: src/routes/api/agent/decide.ts + src/lib/agent/systemPrompt.ts
+   - Requires GROQ_API_KEY. Without it: a clearly-labelled deterministic demo
+     decision is returned so the pipeline is still demonstrable.
+
+THE DECISION PIPELINE (Strategy + AI page):
+   signals (CMC) + on-chain context (BNB) + your strategy text
+        -> Groq proposes ONE action as JSON                (advisory)
+        -> guardrailValidator.ts re-checks every rule       (hard, pure code)
+        -> if approved, "Execute via Trust Wallet" signs    (TWAK, server-side)
+   Raw model output can NEVER, by itself, trigger a signed transaction.
+
+-------------------------------------------------------------------------------
+ 2. PREREQUISITES
+-------------------------------------------------------------------------------
+
+- Node.js LTS: 20 or 22 recommended.
+  * Web app needs Node >= 22.12 (TanStack Start engine requirement).
+  * Contracts (Hardhat) need Node 18/20/22 (NOT >= 23 — see section 8).
+- npm (bundled with Node).
+- A browser wallet (MetaMask / Trust Wallet extension) for desktop, and/or
+  Trust Wallet mobile for WalletConnect QR.
+
+-------------------------------------------------------------------------------
+ 3. INSTALL
+-------------------------------------------------------------------------------
+
+   cd <repo root>            # c:\Users\PRIEYAN\config\AlphaTrade
+   npm install
+
+(The web app and the blockchain/ subproject have SEPARATE package.json files;
+ install each where needed — see section 8 for contracts.)
+
+-------------------------------------------------------------------------------
+ 4. ENVIRONMENT VARIABLES  (web app)
+-------------------------------------------------------------------------------
+
+Create a file named  .env  at the repo root (it is git-ignored). Copy from
+.env.example and fill in. Rules:
+  - VITE_*  variables are PUBLIC (shipped to the browser). Safe values only.
+  - Everything else is SERVER-ONLY and is read inside /api routes. NEVER add a
+    VITE_ prefix to a secret — that would publish it to every visitor.
+
+PUBLIC (browser-safe):
+  VITE_BSC_RPC_URL=https://bsc-dataseed.binance.org
+  VITE_CHAIN_ID=56
+  VITE_COMPETITION_CONTRACT=0x...          # set after you deploy (section 8)
+  VITE_WALLETCONNECT_PROJECT_ID=           # free id from https://cloud.reown.com
+                                           # enables Trust Wallet MOBILE (QR)
+
+SERVER-ONLY (never prefixed with VITE_):
+  # Groq AI decisions
+  GROQ_API_KEY=
+
+  # CoinMarketCap signals
+  CMC_AGENT_API_KEY=
+  CMC_API_URL=https://pro-api.coinmarketcap.com
+
+  # Trust Wallet Agent Kit (HMAC pair from https://portal.trustwallet.com)
+  TWAK_API_URL=https://tws.trustwallet.com
+  TW_ACCESS_ID=
+  TW_HMAC_SECRET=
+  TWAK_AGENT_ADDRESS=                      # wallet to read balances for
+  TWAK_COIN=60                             # SLIP44 id (60 = EVM)
+  # Optional TWAK paths — set only once confirmed against the portal/CLI:
+  # TWAK_SWAP_QUOTE_PATH=/v1/swap/quote
+  # TWAK_SWAP_EXECUTE_PATH=/v1/swap/execute
+  # TWAK_REGISTER_PATH=
+
+  # BNB on-chain agent (optional override; defaults to the public RPC)
+  BNB_AGENT_RPC=https://bsc-dataseed.binance.org
+
+  # On-chain trade history in the Activity tab
+  BSCSCAN_API_KEY=                         # free from https://bscscan.com/myapikey
+  BSCSCAN_API_URL=https://api.bscscan.com/api
+
+WHERE TO GET KEYS:
+  - WalletConnect Project ID : https://cloud.reown.com (free)
+  - Groq API key             : https://console.groq.com
+  - CoinMarketCap API key    : https://pro.coinmarketcap.com/account
+  - Trust Wallet ACCESS_ID + HMAC_SECRET : https://portal.trustwallet.com
+  - BscScan API key          : https://bscscan.com/myapikey (free)
+
+-------------------------------------------------------------------------------
+ 5. RUN (development)
+-------------------------------------------------------------------------------
+
+   npm run dev
+   -> http://localhost:3000  (auto-picks 3001/3002 if busy)
+
+Quick self-tests (curl or browser) after setting keys:
+   GET /api/bnb/context        -> live block/gas (works with NO keys)
+   GET /api/signals            -> {configured:false} until CMC_AGENT_API_KEY set
+   GET /api/twak/ping          -> 200 proves TWAK signing works end-to-end
+   GET /api/twak/balance       -> live native balance (needs TWAK_* + address)
+   GET /api/chain/txs?address=0x... -> on-chain history (needs BSCSCAN_API_KEY)
+
+Click "Connect Wallet" — injected (extension) works immediately with no keys;
+WalletConnect/mobile appears once VITE_WALLETCONNECT_PROJECT_ID is set.
+
+-------------------------------------------------------------------------------
+ 6. BUILD & RUN (production)
+-------------------------------------------------------------------------------
+
+   npm run build        # outputs the server bundle under .output/
+   npm run start        # node .output/server/index.mjs   (serves the app)
+
+Set the same environment variables in your production host. Secrets must be
+provided as real environment variables on the server; never bake them into the
+client bundle.
+
+-------------------------------------------------------------------------------
+ 7. PROJECT STRUCTURE (high level)
+-------------------------------------------------------------------------------
+
+  src/
+    routes/
+      __root.tsx              App shell; WagmiProvider + QueryClientProvider.
+      index.tsx               Marketing landing page + WalletButton.
+      dashboard.tsx           Dashboard shell (kill switch, wallet, nav).
+      dashboard.index.tsx     Overview: live BNB balance + network, controls.
+      dashboard.guardrails.tsx Editable hard-rule config (zod-validated form).
+      dashboard.strategy.tsx  Signals -> Groq decision -> guardrails -> execute.
+      dashboard.activity.tsx  Real on-chain tx history + competition register.
+      api/
+        agent/decide.ts       Groq decision endpoint (server).
+        signals.ts            CMC Fear & Greed (server).
+        bnb/context.ts        Live BNB on-chain context (server).
+        chain/txs.ts          BscScan tx history (server).
+        twak/ping|balance|register|swap.ts  Trust Wallet operations (server).
+    lib/
+      wagmi.ts                Wallet config (injected + WalletConnect).
+      tokens.ts               Competition-eligible BEP-20 allowlist (config).
+      config.ts               Public client config.
+      agent/
+        systemPrompt.ts       Groq system prompt.
+        guardrailValidator.ts Deterministic guardrails (the real safety layer).
+        rateLimit.ts          Per-session rate limiting for /api/agent/decide.
+      services/
+        bnbAgentService.ts    viem on-chain reads (BNB layer).
+        cmcService.ts         Client accessor for /api/signals.
+        twClient.ts           TWAK HMAC-signed fetch (server-only).
+        twakService.ts        TWAK high-level operations (server-only).
+  components/                 UI components (brutalist design system).
+  blockchain/                 Standalone Hardhat project (CompetitionRegistry).
+
+-------------------------------------------------------------------------------
+ 8. SMART CONTRACT — DEPLOY (blockchain/ Hardhat subproject)
+-------------------------------------------------------------------------------
+
+CompetitionRegistry.sol records each agent wallet into an immutable,
+append-only on-chain list (self-custodial register() or operator
+registerAgent()). No owner, no upgrades, no custody.
+
+IMPORTANT: use Node 18/20/22 for this subproject. Hardhat 2.x does not support
+Node >= 23, and its first-run solc download can hang on very new Node.
+
+   cd blockchain
+   npm install
+   copy .env.example .env        # (PowerShell: Copy-Item .env.example .env)
+
+Fill blockchain/.env:
+   AGENT_PRIVATE_KEY=...          # deployer key; signs locally, never sent
+   BSC_RPC_URL=https://bsc-dataseed.binance.org
+   BSC_TESTNET_RPC_URL=https://data-seed-prebsc-1-s1.binance.org:8545
+   BSCSCAN_API_KEY=...            # for source verification
+   REGISTRATION_DEADLINE=         # unix seconds; defaults to now + 7 days
+
+Commands:
+   npm run compile                # compile contracts (solc 0.8.24)
+   npm test                       # run the test suite (local Hardhat network)
+   npm run deploy:testnet         # deploy to BSC testnet (chain 97)
+   npm run deploy:mainnet         # deploy to BSC mainnet (chain 56)
+   npm run verify -- <address> <constructorArgs...>   # verify on BscScan
+
+Set a custom trading-window open time at deploy:
+   (PowerShell)  $env:REGISTRATION_DEADLINE=1735689600; npm run deploy:testnet
+
+AFTER DEPLOY:
+   Copy the printed contract address into the WEB APP's .env as
+   VITE_COMPETITION_CONTRACT=0x...  then restart the web app. The Activity tab's
+   "Register Agent" button and the on-chain links will then point at it.
+
+Reference deployment (already wired as the default):
+   0x212c61b9b72c95d95bf29cf032f5e5635629aed5  (BSC mainnet, chain 56)
+
+-------------------------------------------------------------------------------
+ 9. "FUNCTIONAL UNDER EVERY CONSTRAINT" — GRACEFUL DEGRADATION MATRIX
+-------------------------------------------------------------------------------
+
+Nothing is faked. Each feature is either live (configured) or shows an honest
+empty/disabled state. With ZERO keys the app still builds, runs, and:
+
+  WORKS WITH NO KEYS:
+    - Connect wallet via browser extension (injected) + real address
+    - Real native BNB balance (public RPC)
+    - Live BNB network context (block height, gas) on Overview
+    - Guardrails editor; kill switch; agent start/stop controls
+    - Groq pipeline runs with a clearly-labelled demo decision
+
+  LIGHTS UP WHEN YOU ADD:
+    VITE_WALLETCONNECT_PROJECT_ID -> Trust Wallet MOBILE via QR
+    GROQ_API_KEY                  -> real AI decisions
+    CMC_AGENT_API_KEY             -> live Fear & Greed signals
+    BSCSCAN_API_KEY               -> real trade history in Activity
+    TW_ACCESS_ID + TW_HMAC_SECRET -> TWAK balances / registration / swap exec
+                                     (+ TWAK_AGENT_ADDRESS for balances)
+
+  REQUIRES PERSISTENCE (intentionally empty — no datastore in this build):
+    - Portfolio value-over-time chart, PnL %, and the decision log show
+      "no data yet" rather than invented numbers.
+
+-------------------------------------------------------------------------------
+ 10. SECURITY MODEL
+-------------------------------------------------------------------------------
+
+  - Secrets are SERVER-ONLY: read inside /api routes from process.env, never
+    shipped to the browser. twClient.ts hard-fails if imported client-side.
+  - .env and .env.* are git-ignored (only .env.example is tracked). Verify with:
+       git check-ignore -v .env
+  - The HMAC secret is shown ONCE by Trust Wallet; store it in a password
+    manager too. If it ever leaks, rotate it in the portal.
+  - The LLM is advisory: guardrailValidator.ts (pure code) re-validates every
+    proposal (allowlist, per-trade cap, daily cap, drawdown, slippage ceiling,
+    confidence floor, kill switch) before any signing path is reachable.
+  - Kill switch short-circuits /api/agent/decide before any model call or swap.
+  - User strategy text is sanitized for prompt-injection (defense in depth).
+
+-------------------------------------------------------------------------------
+ 11. TROUBLESHOOTING
+-------------------------------------------------------------------------------
+
+  "credentials missing" from /api/twak/* :
+     No .env at repo root, or TW_ACCESS_ID / TW_HMAC_SECRET unset. Create .env
+     (section 4), restart `npm run dev`. /api/twak/ping should return 200.
+
+  /api/twak/ping returns 403 "request denied" :
+     The signing reached Trust Wallet but the credentials are wrong/expired —
+     re-copy them from the portal (use the copy buttons; don't retype).
+
+  /api/signals shows {configured:false} :
+     CMC_AGENT_API_KEY not set on the server. Expected until you add it.
+
+  WalletConnect / mobile not appearing :
+     Set VITE_WALLETCONNECT_PROJECT_ID and restart. Injected (extension) works
+     without it.
+
+  Hardhat hangs at "Downloading compiler 0.8.24" :
+     You are on Node >= 23. Switch to Node 20/22 for the blockchain/ subproject.
+
+  Port 3000 in use :
+     Vite auto-selects 3001/3002 and prints the URL. Or stop the other process.
+
+-------------------------------------------------------------------------------
+ 12. ONE-LINER QUICK START
+-------------------------------------------------------------------------------
+
+   npm install && cp .env.example .env && npm run dev
+   # then open the printed URL and click "Connect Wallet".
+   # add keys to .env (section 4) to light up signals, AI, balances & history.
+
+===============================================================================

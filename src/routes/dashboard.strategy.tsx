@@ -4,7 +4,10 @@ import { useState } from "react";
 import { useApp } from "@/lib/store";
 import { fetchSignals } from "@/lib/services/cmcService";
 import { useQuery } from "@tanstack/react-query";
-import { Sparkles, Loader2 } from "lucide-react";
+import { useAccount, useBalance } from "wagmi";
+import { bsc } from "wagmi/chains";
+import { formatUnits } from "viem";
+import { Sparkles, Loader2, Rocket } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/dashboard/strategy")({
@@ -21,13 +24,27 @@ function StrategyPage() {
   const [strategy, setStrategy] = useState("Rotate up to 5% from USDT into BNB when Fear & Greed is above 60 and funding stays positive. Hold otherwise.");
   const [sources, setSources] = useState({ fg: true, funding: true, sentiment: true, momentum: false });
   const [loading, setLoading] = useState(false);
+  const [executing, setExecuting] = useState(false);
   const [result, setResult] = useState<DecisionResp | null>(null);
+
+  const { address, isConnected } = useAccount();
+  const { data: bal } = useBalance({ address, chainId: bsc.id, query: { enabled: isConnected } });
 
   const signalsQ = useQuery({ queryKey: ["signals"], queryFn: fetchSignals });
   const signals = signalsQ.data;
   const fg = signals?.fearGreed ?? null;
   const funding = signals?.funding ?? null;
   const sentiment = signals?.sentiment ?? null;
+
+  // Live BNB Smart Chain context fed into the Groq decision as a real signal.
+  const onchainQ = useQuery({
+    queryKey: ["bnb-context"],
+    queryFn: async () => {
+      const r = await fetch("/api/bnb/context");
+      return (await r.json()) as { ok: boolean; blockNumber?: number; gasPriceGwei?: number };
+    },
+    refetchInterval: 15000,
+  });
 
   const run = async () => {
     setLoading(true);
@@ -41,6 +58,7 @@ function StrategyPage() {
             fearGreed: sources.fg ? fg ?? undefined : undefined,
             funding: sources.funding ? funding ?? undefined : undefined,
             sentiment: sources.sentiment ? sentiment ?? undefined : undefined,
+            onchain: onchainQ.data?.ok ? onchainQ.data : undefined,
           },
           guardrails: {
             // No persistence yet → real per-day counters are unknown; send 0
@@ -61,6 +79,37 @@ function StrategyPage() {
       toast[data.validation.approved ? "success" : "error"](data.validation.approved ? "Decision approved" : "Decision rejected", { description: data.validation.reason });
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Decision → execution: route the approved decision through Trust Wallet
+  // (server-side signing). Honest — surfaces the real result or error.
+  const execute = async () => {
+    if (!result) return;
+    const d = result.decision;
+    // Auto-amount is only derivable when selling native BNB from the connected
+    // wallet; otherwise we send 0 and let the (configured) TWAK layer resolve.
+    let amount = "0";
+    if (d.tokenIn.toUpperCase() === "BNB" && bal) {
+      amount = ((Number(formatUnits(bal.value, bal.decimals)) * d.sizePercent) / 100).toFixed(6);
+    }
+    setExecuting(true);
+    try {
+      const res = await fetch("/api/twak/swap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tokenIn: d.tokenIn, tokenOut: d.tokenOut, amount, slippage: guardrails.slippagePct }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Execution failed");
+        return;
+      }
+      toast.success(data.txHash ? `Swap submitted: ${String(data.txHash).slice(0, 12)}…` : "Swap submitted");
+    } catch {
+      toast.error("Execution request failed");
+    } finally {
+      setExecuting(false);
     }
   };
 
@@ -109,6 +158,16 @@ function StrategyPage() {
               {result.validation.reason && (
                 <div className="mt-3 text-sm border-2 border-paper p-2 font-mono">
                   <span className="text-pink">guardrail:</span> {result.validation.reason}
+                </div>
+              )}
+              {result.validation.approved && result.decision.action !== "hold" && (
+                <div className="mt-3 flex items-center gap-3 flex-wrap">
+                  <button onClick={execute} disabled={!isConnected || executing}
+                    className="inline-flex items-center gap-2 border-2 border-paper bg-lime text-ink px-4 py-2 font-display text-xs uppercase shadow-[5px_5px_0_0_#f5f1e0] disabled:opacity-50">
+                    {executing ? <Loader2 className="size-4 animate-spin" /> : <Rocket className="size-4" />}
+                    Execute via Trust Wallet
+                  </button>
+                  {!isConnected && <span className="text-xs font-mono text-paper/60">connect a wallet to execute</span>}
                 </div>
               )}
             </div>

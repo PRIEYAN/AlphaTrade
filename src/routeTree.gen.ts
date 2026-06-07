@@ -16,10 +16,12 @@ import { Route as DashboardStrategyRouteImport } from './routes/dashboard.strate
 import { Route as DashboardGuardrailsRouteImport } from './routes/dashboard.guardrails'
 import { Route as DashboardActivityRouteImport } from './routes/dashboard.activity'
 import { Route as ApiSignalsRouteImport } from './routes/api/signals'
+import { Route as ApiTwakSwapRouteImport } from './routes/api/twak/swap'
 import { Route as ApiTwakRegisterRouteImport } from './routes/api/twak/register'
 import { Route as ApiTwakPingRouteImport } from './routes/api/twak/ping'
 import { Route as ApiTwakBalanceRouteImport } from './routes/api/twak/balance'
 import { Route as ApiChainTxsRouteImport } from './routes/api/chain/txs'
+import { Route as ApiBnbContextRouteImport } from './routes/api/bnb/context'
 import { Route as ApiAgentDecideRouteImport } from './routes/api/agent/decide'
 
 const DashboardRoute = DashboardRouteImport.update({
@@ -57,6 +59,11 @@ const ApiSignalsRoute = ApiSignalsRouteImport.update({
   path: '/api/signals',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiTwakSwapRoute = ApiTwakSwapRouteImport.update({
+  id: '/api/twak/swap',
+  path: '/api/twak/swap',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiTwakRegisterRoute = ApiTwakRegisterRouteImport.update({
   id: '/api/twak/register',
   path: '/api/twak/register',
@@ -77,6 +84,11 @@ const ApiChainTxsRoute = ApiChainTxsRouteImport.update({
   path: '/api/chain/txs',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiBnbContextRoute = ApiBnbContextRouteImport.update({
+  id: '/api/bnb/context',
+  path: '/api/bnb/context',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAgentDecideRoute = ApiAgentDecideRouteImport.update({
   id: '/api/agent/decide',
   path: '/api/agent/decide',
@@ -92,10 +104,12 @@ export interface FileRoutesByFullPath {
   '/dashboard/strategy': typeof DashboardStrategyRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/api/agent/decide': typeof ApiAgentDecideRoute
+  '/api/bnb/context': typeof ApiBnbContextRoute
   '/api/chain/txs': typeof ApiChainTxsRoute
   '/api/twak/balance': typeof ApiTwakBalanceRoute
   '/api/twak/ping': typeof ApiTwakPingRoute
   '/api/twak/register': typeof ApiTwakRegisterRoute
+  '/api/twak/swap': typeof ApiTwakSwapRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -105,10 +119,12 @@ export interface FileRoutesByTo {
   '/dashboard/strategy': typeof DashboardStrategyRoute
   '/dashboard': typeof DashboardIndexRoute
   '/api/agent/decide': typeof ApiAgentDecideRoute
+  '/api/bnb/context': typeof ApiBnbContextRoute
   '/api/chain/txs': typeof ApiChainTxsRoute
   '/api/twak/balance': typeof ApiTwakBalanceRoute
   '/api/twak/ping': typeof ApiTwakPingRoute
   '/api/twak/register': typeof ApiTwakRegisterRoute
+  '/api/twak/swap': typeof ApiTwakSwapRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -120,10 +136,12 @@ export interface FileRoutesById {
   '/dashboard/strategy': typeof DashboardStrategyRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/api/agent/decide': typeof ApiAgentDecideRoute
+  '/api/bnb/context': typeof ApiBnbContextRoute
   '/api/chain/txs': typeof ApiChainTxsRoute
   '/api/twak/balance': typeof ApiTwakBalanceRoute
   '/api/twak/ping': typeof ApiTwakPingRoute
   '/api/twak/register': typeof ApiTwakRegisterRoute
+  '/api/twak/swap': typeof ApiTwakSwapRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -136,10 +154,12 @@ export interface FileRouteTypes {
     | '/dashboard/strategy'
     | '/dashboard/'
     | '/api/agent/decide'
+    | '/api/bnb/context'
     | '/api/chain/txs'
     | '/api/twak/balance'
     | '/api/twak/ping'
     | '/api/twak/register'
+    | '/api/twak/swap'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -149,10 +169,12 @@ export interface FileRouteTypes {
     | '/dashboard/strategy'
     | '/dashboard'
     | '/api/agent/decide'
+    | '/api/bnb/context'
     | '/api/chain/txs'
     | '/api/twak/balance'
     | '/api/twak/ping'
     | '/api/twak/register'
+    | '/api/twak/swap'
   id:
     | '__root__'
     | '/'
@@ -163,10 +185,12 @@ export interface FileRouteTypes {
     | '/dashboard/strategy'
     | '/dashboard/'
     | '/api/agent/decide'
+    | '/api/bnb/context'
     | '/api/chain/txs'
     | '/api/twak/balance'
     | '/api/twak/ping'
     | '/api/twak/register'
+    | '/api/twak/swap'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -174,10 +198,12 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRouteWithChildren
   ApiSignalsRoute: typeof ApiSignalsRoute
   ApiAgentDecideRoute: typeof ApiAgentDecideRoute
+  ApiBnbContextRoute: typeof ApiBnbContextRoute
   ApiChainTxsRoute: typeof ApiChainTxsRoute
   ApiTwakBalanceRoute: typeof ApiTwakBalanceRoute
   ApiTwakPingRoute: typeof ApiTwakPingRoute
   ApiTwakRegisterRoute: typeof ApiTwakRegisterRoute
+  ApiTwakSwapRoute: typeof ApiTwakSwapRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -231,6 +257,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSignalsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/twak/swap': {
+      id: '/api/twak/swap'
+      path: '/api/twak/swap'
+      fullPath: '/api/twak/swap'
+      preLoaderRoute: typeof ApiTwakSwapRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/twak/register': {
       id: '/api/twak/register'
       path: '/api/twak/register'
@@ -257,6 +290,13 @@ declare module '@tanstack/react-router' {
       path: '/api/chain/txs'
       fullPath: '/api/chain/txs'
       preLoaderRoute: typeof ApiChainTxsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/bnb/context': {
+      id: '/api/bnb/context'
+      path: '/api/bnb/context'
+      fullPath: '/api/bnb/context'
+      preLoaderRoute: typeof ApiBnbContextRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/agent/decide': {
@@ -292,10 +332,12 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRouteWithChildren,
   ApiSignalsRoute: ApiSignalsRoute,
   ApiAgentDecideRoute: ApiAgentDecideRoute,
+  ApiBnbContextRoute: ApiBnbContextRoute,
   ApiChainTxsRoute: ApiChainTxsRoute,
   ApiTwakBalanceRoute: ApiTwakBalanceRoute,
   ApiTwakPingRoute: ApiTwakPingRoute,
   ApiTwakRegisterRoute: ApiTwakRegisterRoute,
+  ApiTwakSwapRoute: ApiTwakSwapRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

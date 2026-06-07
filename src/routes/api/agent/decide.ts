@@ -19,6 +19,7 @@ const requestSchema = z.object({
     funding: z.any().optional(),
     sentiment: z.any().optional(),
     momentum: z.any().optional(),
+    onchain: z.any().optional(),
   }),
   guardrails: z.object({
     maxPerTradePct: z.number(),

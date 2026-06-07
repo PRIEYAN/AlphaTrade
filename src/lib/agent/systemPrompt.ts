@@ -24,6 +24,7 @@ SIGNAL INTERPRETATION (when provided)
 - Funding rates: persistently high positive funding = crowded longs (downside risk); negative funding = crowded shorts.
 - Sentiment: treat as a weak, contrarian-leaning signal; high mention spikes often mark local tops.
 - Momentum (RSI/MACD): RSI > 70 overbought, < 30 oversold; require at least two signals to agree before acting.
+- On-chain context (BNB Smart Chain block height + gas price, when provided): treat abnormally high gas as elevated execution cost/congestion — a reason to prefer holding or smaller sizing, never on its own a reason to trade.
 - If signal sources are disabled or empty, weight them as unavailable, not as bullish.
 
 DEFAULT TO HOLD

@@ -17,6 +17,7 @@ export const Route = createFileRoute("/dashboard/strategy")({
 type DecisionResp = {
   decision: { action: "buy" | "sell" | "hold"; tokenIn: string; tokenOut: string; sizePercent: number; confidence: number; reasoning: string };
   validation: { approved: boolean; reason?: string };
+  error?: string | null;
 };
 
 function StrategyPage() {
@@ -76,7 +77,14 @@ function StrategyPage() {
       }
       const data: DecisionResp = await res.json();
       setResult(data);
-      toast[data.validation.approved ? "success" : "error"](data.validation.approved ? "Decision approved" : "Decision rejected", { description: data.validation.reason });
+      if (data.error) {
+        toast.error(data.error);
+      } else {
+        toast[data.validation.approved ? "success" : "error"](
+          data.validation.approved ? "Decision approved" : "Decision rejected",
+          { description: data.validation.reason },
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -150,17 +158,22 @@ function StrategyPage() {
             <div className="mt-2 border-brutal bg-ink text-paper p-4">
               <div className="flex items-center justify-between">
                 <div className="font-display uppercase">AI Decision</div>
-                <span className={`border-brutal px-2 py-0.5 font-display text-xs uppercase shadow-brutal-sm ${result.validation.approved ? "bg-lime text-ink" : "bg-destructive text-destructive-foreground"}`}>
-                  {result.validation.approved ? "APPROVED" : "REJECTED"}
+                <span className={`border-brutal px-2 py-0.5 font-display text-xs uppercase shadow-brutal-sm ${result.error ? "bg-orange text-ink" : result.validation.approved ? "bg-lime text-ink" : "bg-destructive text-destructive-foreground"}`}>
+                  {result.error ? "AI ERROR" : result.validation.approved ? "APPROVED" : "REJECTED"}
                 </span>
               </div>
               <pre className="mt-3 text-xs font-mono whitespace-pre-wrap text-paper">{JSON.stringify(result.decision, null, 2)}</pre>
+              {result.error && (
+                <div className="mt-3 text-sm border-2 border-orange p-2 font-mono text-orange">
+                  <span className="font-bold">AI error:</span> {result.error}
+                </div>
+              )}
               {result.validation.reason && (
                 <div className="mt-3 text-sm border-2 border-paper p-2 font-mono">
                   <span className="text-pink">guardrail:</span> {result.validation.reason}
                 </div>
               )}
-              {result.validation.approved && result.decision.action !== "hold" && (
+              {!result.error && result.validation.approved && result.decision.action !== "hold" && (
                 <div className="mt-3 flex items-center gap-3 flex-wrap">
                   <button onClick={execute} disabled={!isConnected || executing}
                     className="inline-flex items-center gap-2 border-2 border-paper bg-lime text-ink px-4 py-2 font-display text-xs uppercase shadow-[5px_5px_0_0_#f5f1e0] disabled:opacity-50">

@@ -207,12 +207,21 @@ Fill blockchain/.env:
 Commands:
    npm run compile                # compile contracts (solc 0.8.24)
    npm test                       # run the test suite (local Hardhat network)
+   npm run deploy                 # deploy to the in-process Hardhat network
    npm run deploy:testnet         # deploy to BSC testnet (chain 97)
    npm run deploy:mainnet         # deploy to BSC mainnet (chain 56)
    npm run verify -- <address> <constructorArgs...>   # verify on BscScan
 
+The deploy script (scripts/deploy.ts) is verbose: it prints network, deployer,
+balance, deadline, tx hash, block/gas, then READS THE CONTRACT STATE BACK to
+confirm the deploy, SAVES an artifact to blockchain/deployments/<network>.json,
+auto-verifies on BscScan when BSCSCAN_API_KEY is set, and finally prints the
+exact VITE_COMPETITION_CONTRACT=0x... line to paste into the web app. It fails
+early with a clear message on a 0-BNB deployer or a non-future deadline.
+
 Set a custom trading-window open time at deploy:
-   (PowerShell)  $env:REGISTRATION_DEADLINE=1735689600; npm run deploy:testnet
+   (bash)        REGISTRATION_DEADLINE=1767225600 npm run deploy:testnet
+   (PowerShell)  $env:REGISTRATION_DEADLINE=1767225600; npm run deploy:testnet
 
 AFTER DEPLOY:
    Copy the printed contract address into the WEB APP's .env as

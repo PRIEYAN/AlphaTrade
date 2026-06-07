@@ -1,0 +1,125 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-pink: var(--brand-pink);
+  --color-lime: var(--brand-lime);
+  --color-orange: var(--brand-orange);
+  --color-cyan: var(--brand-cyan);
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --font-display: "Archivo Black", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-sans: "Space Grotesk", system-ui, sans-serif;
+}
+
+:root {
+  --paper: oklch(0.965 0.035 95);
+  --ink: oklch(0.12 0 0);
+  --brand-pink: oklch(0.68 0.27 6);
+  --brand-lime: oklch(0.92 0.23 125);
+  --brand-orange: oklch(0.72 0.22 45);
+  --brand-cyan: oklch(0.82 0.13 220);
+
+  --radius: 0px;
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: oklch(1 0 0);
+  --card-foreground: var(--ink);
+  --popover: oklch(1 0 0);
+  --popover-foreground: var(--ink);
+  --primary: var(--ink);
+  --primary-foreground: var(--paper);
+  --secondary: var(--brand-lime);
+  --secondary-foreground: var(--ink);
+  --muted: oklch(0.93 0.03 95);
+  --muted-foreground: oklch(0.4 0.02 95);
+  --accent: var(--brand-pink);
+  --accent-foreground: var(--ink);
+  --destructive: oklch(0.6 0.25 25);
+  --destructive-foreground: oklch(1 0 0);
+  --border: var(--ink);
+  --input: var(--ink);
+  --ring: var(--brand-pink);
+}
+
+.dark {
+  --background: oklch(0.12 0 0);
+  --foreground: var(--paper);
+  --card: oklch(0.18 0 0);
+  --card-foreground: var(--paper);
+  --popover: oklch(0.18 0 0);
+  --popover-foreground: var(--paper);
+  --primary: var(--brand-pink);
+  --primary-foreground: var(--ink);
+  --border: var(--paper);
+  --input: var(--paper);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html, body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+  }
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+}
+
+@utility shadow-brutal {
+  box-shadow: 5px 5px 0 0 var(--ink);
+}
+@utility shadow-brutal-sm {
+  box-shadow: 3px 3px 0 0 var(--ink);
+}
+@utility shadow-brutal-lg {
+  box-shadow: 8px 8px 0 0 var(--ink);
+}
+@utility border-brutal {
+  border: 3px solid var(--ink);
+}
+@utility grid-bg {
+  background-image:
+    linear-gradient(to right, oklch(0.12 0 0 / 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, oklch(0.12 0 0 / 0.06) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.animate-marquee {
+  animation: marquee 40s linear infinite;
+}

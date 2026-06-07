@@ -1,0 +1,188 @@
+===============================================================================
+ ALPHATRADE — FULL WORKFLOW SETUP (from zero to running)
+===============================================================================
+
+This is the step-by-step "do this in order" guide for the whole stack. For the
+deeper reference (every env var, API routes, security model) see info.txt.
+
+AlphaTrade has THREE independent components that talk over HTTP / the chain:
+
+  (A) Web app        TanStack Start + React + wagmi/viem   (repo root)   :3000
+  (B) AI Agent       Python / Flask (Groq + BNB agents)    Agent/        :5000
+  (C) Smart contract Hardhat (CompetitionRegistry)         blockchain/   on-chain
+
+  How they connect:
+   - The web app reads the chain directly (viem) and signs via the wallet.
+   - The web app's own /api routes call Groq, CMC, TWAK, BscScan.
+   - (B) is an OPTIONAL standalone AI backend exposing the SAME decision +
+     on-chain endpoints, so you can run the AI logic in Python instead of /
+     alongside the web app.
+   - (C) is deployed once; its address goes into the web app as
+     VITE_COMPETITION_CONTRACT, and the Activity tab registers against it.
+
+You can run (A) alone and have a working app. Add (B) and (C) for the full
+workflow.
+
+-------------------------------------------------------------------------------
+ 0. PREREQUISITES (install these first)
+-------------------------------------------------------------------------------
+
+  - Node.js 20 or 22  (NOT 23+). 23/24/26 break Hardhat 2.x and can hang the
+    solc download. Use nvm to pin:
+        nvm install 22 && nvm use 22            # Linux/macOS
+        nvm install 22.11.0 && nvm use 22.11.0  # Windows (nvm-windows)
+        node -v   # must be v20.x or v22.x
+  - Python 3.10+  (only for component B). Verify:  python --version
+  - git, and a browser wallet (MetaMask / Trust Wallet extension), and/or
+    Trust Wallet mobile for WalletConnect.
+
+  Get into the project:
+        cd <path>/AlphaTrade        # repo root (has package.json + Agent/ + blockchain/)
+
+-------------------------------------------------------------------------------
+ 1. (C) SMART CONTRACT — deploy first so you have an address
+-------------------------------------------------------------------------------
+ (You can SKIP this and use the reference contract already wired in the web app:
+  0x212c61b9b72c95d95bf29cf032f5e5635629aed5  — then jump to step 2.)
+
+   cd blockchain
+   npm install
+   cp .env.example .env          # PowerShell: Copy-Item .env.example .env
+
+  Edit blockchain/.env:
+     AGENT_PRIVATE_KEY=<deployer key, FUNDED with BNB>   # signs locally only
+     BSC_RPC_URL=https://bsc-dataseed.binance.org
+     BSC_TESTNET_RPC_URL=https://data-seed-prebsc-1-s1.binance.org:8545
+     BSCSCAN_API_KEY=<optional, for source verification>
+     REGISTRATION_DEADLINE=<optional unix seconds; default now+7d>
+
+  Build, test, deploy:
+     npm run compile
+     npm test
+     npm run deploy:testnet       # BSC testnet (chain 97); get test BNB from the faucet
+     # or: npm run deploy:mainnet # BSC mainnet (chain 56) — real BNB
+
+  Testnet faucet: https://testnet.bnbchain.org/faucet-smart
+
+  The script prints everything and saves blockchain/deployments/<network>.json.
+  COPY the printed address — you need it in step 2:
+     VITE_COMPETITION_CONTRACT=0x.....
+
+-------------------------------------------------------------------------------
+ 2. (A) WEB APP — the main UI
+-------------------------------------------------------------------------------
+   cd <repo root>
+   npm install
+   cp .env.example .env          # PowerShell: Copy-Item .env.example .env
+
+  Edit .env (repo root). Minimum to RUN with real wallet + balances (no keys):
+     VITE_BSC_RPC_URL=https://bsc-dataseed.binance.org
+     VITE_CHAIN_ID=56
+     VITE_COMPETITION_CONTRACT=0x...   # from step 1 (or the reference address)
+
+  Add these to light up each feature (all server-only except the VITE_ one):
+     VITE_WALLETCONNECT_PROJECT_ID=    # Trust Wallet mobile via QR  (cloud.reown.com)
+     GROQ_API_KEY=                     # real AI decisions           (console.groq.com)
+     CMC_AGENT_API_KEY=                # live Fear & Greed signals   (pro.coinmarketcap.com)
+     TW_ACCESS_ID=                     # Trust Wallet balances/exec  (portal.trustwallet.com)
+     TW_HMAC_SECRET=
+     TWAK_AGENT_ADDRESS=
+     BSCSCAN_API_KEY=                  # on-chain trade history      (bscscan.com/myapikey)
+
+  Run:
+     npm run dev                  # http://localhost:3000
+     # production: npm run build && npm run start
+
+  Smoke test (no keys needed for the first two):
+     curl http://localhost:3000/api/bnb/context        # live block/gas
+     curl http://localhost:3000/api/signals            # {configured:false} until CMC key
+     curl http://localhost:3000/api/twak/ping          # 200 once TWAK creds set
+
+-------------------------------------------------------------------------------
+ 3. (B) AI AGENT BACKEND — optional Python service
+-------------------------------------------------------------------------------
+   cd Agent
+   python -m venv .venv
+   # activate:  Windows -> .venv\Scripts\activate    Linux/macOS -> source .venv/bin/activate
+   pip install -r requirements.txt
+   cp .env.example .env          # PowerShell: Copy-Item .env.example .env
+
+  Edit Agent/.env:
+     GROQ_API_KEY=                # optional; without it /decide returns a labelled demo
+     GROQ_MODEL=llama-3.3-70b-versatile
+     BNB_AGENT_RPC=https://bsc-dataseed.binance.org
+     CHAIN_ID=56
+     PORT=5000
+     CORS_ORIGINS=http://localhost:3000,http://localhost:3001,http://localhost:3002
+
+  Run:
+     python wsgi.py              # http://127.0.0.1:5000
+     # production: gunicorn wsgi:app -b 0.0.0.0:5000
+
+  Smoke test:
+     curl http://127.0.0.1:5000/health
+     curl http://127.0.0.1:5000/api/bnb/context
+
+-------------------------------------------------------------------------------
+ 4. KEYS — what each one is for, and where it lives
+-------------------------------------------------------------------------------
+  KEY                          USED BY            PUT IN
+  VITE_WALLETCONNECT_PROJECT_ID web app (client)  ./.env
+  GROQ_API_KEY                  web app + Agent    ./.env  and/or  Agent/.env
+  CMC_AGENT_API_KEY             web app            ./.env
+  TW_ACCESS_ID / TW_HMAC_SECRET web app (server)   ./.env
+  BSCSCAN_API_KEY               web app + contract ./.env  and  blockchain/.env
+  AGENT_PRIVATE_KEY             contract deploy     blockchain/.env  (FUNDED)
+
+  Where to get them:
+    WalletConnect : https://cloud.reown.com
+    Groq          : https://console.groq.com
+    CoinMarketCap : https://pro.coinmarketcap.com/account
+    Trust Wallet  : https://portal.trustwallet.com
+    BscScan       : https://bscscan.com/myapikey
+
+  ALL .env files are git-ignored. Never commit a real key or private key.
+
+-------------------------------------------------------------------------------
+ 5. RECOMMENDED END-TO-END WORKFLOW (the happy path)
+-------------------------------------------------------------------------------
+  1) nvm use 22                       (Node 22)   +  python --version >= 3.10
+  2) Deploy the contract (step 1) OR use the reference address.
+  3) Fill repo-root .env: VITE_COMPETITION_CONTRACT + the keys you have.
+  4) (optional) Start the Python Agent (step 3).
+  5) npm run dev  -> open http://localhost:3000
+  6) Click "Connect Wallet" (extension works instantly; mobile needs the WC id).
+  7) Overview shows live BNB balance + live block/gas.
+  8) Strategy + AI: type a strategy, "Run Analysis":
+        - GREEN "APPROVED"  -> a real, guardrail-passed decision.
+        - ORANGE "AI ERROR" -> the model call failed (usually a bad GROQ_API_KEY).
+        - On an approved non-hold decision, "Execute via Trust Wallet" appears.
+  9) Activity: real on-chain tx history (with BSCSCAN_API_KEY) + "Register Agent".
+
+-------------------------------------------------------------------------------
+ 6. TROUBLESHOOTING (most common, in order of likelihood)
+-------------------------------------------------------------------------------
+  Hardhat hangs at "Downloading compiler 0.8.24" / deploy won't run:
+     You're on Node 23+. `nvm use 22` and retry.
+
+  Strategy shows "AI ERROR" / log says 401 Invalid API Key:
+     GROQ_API_KEY is wrong/expired. Put a valid key in .env and restart.
+     (A hold from a failed call is now shown as AI ERROR, not "approved".)
+
+  Signals panel says "not configured":
+     Set CMC_AGENT_API_KEY (web app .env) and restart. Expected without it.
+
+  /api/twak/* says "credentials missing":
+     No .env at repo root, or TW_ACCESS_ID / TW_HMAC_SECRET unset.
+     `git check-ignore -v .env` should confirm .env is ignored.
+
+  WalletConnect/mobile button missing:
+     Set VITE_WALLETCONNECT_PROJECT_ID and restart. Injected works without it.
+
+  Agent CORS error in the browser:
+     Add the web app's origin to CORS_ORIGINS in Agent/.env and restart it.
+
+  Port 3000 busy:
+     Vite auto-picks 3001/3002 and prints the URL.
+
+===============================================================================

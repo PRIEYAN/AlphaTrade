@@ -69,6 +69,7 @@ export const Route = createFileRoute("/api/agent/decide")({
 
         let decision: Decision;
         let raw: string | null = null;
+        let error: string | null = null;
 
         if (!apiKey) {
           // Deterministic demo fallback when no key is configured.
@@ -107,15 +108,27 @@ export const Route = createFileRoute("/api/agent/decide")({
             raw = completion.choices[0]?.message?.content ?? "";
             const json = JSON.parse(raw);
             const v = decisionSchema.safeParse(json);
-            decision = v.success ? v.data : safeHoldFallback("Schema validation failed.");
+            if (v.success) {
+              decision = v.data;
+            } else {
+              decision = safeHoldFallback("Schema validation failed.");
+              error = "The AI returned malformed output — held as a precaution.";
+            }
           } catch (err) {
             console.error("Groq error", err);
             decision = safeHoldFallback("Upstream AI error — defaulting to hold.");
+            const status = (err as { status?: number })?.status;
+            error =
+              status === 401
+                ? "Groq rejected the API key (401 Invalid API Key). Set a valid GROQ_API_KEY and restart."
+                : `Upstream AI error${status ? ` (${status})` : ""} — the model call failed, so the agent held.`;
           }
         }
 
+        // `error` is non-null only when the AI call failed (auth/upstream/schema).
+        // A hold from a *failed* call must not be presented as a successful decision.
         const validation = validateDecision(decision, g);
-        return Response.json({ decision, validation, raw });
+        return Response.json({ decision, validation, raw, error });
       },
     },
   },

@@ -1,0 +1,11 @@
+{
+  "contract": "CompetitionRegistry",
+  "address": "0xA9cA4740f15353c040C68eF4EB2a759A8E4F483D",
+  "network": "bscTestnet",
+  "chainId": 97,
+  "deployer": "0x348B754103e12434AEe3Df42471aD939911939Dd",
+  "registrationDeadline": 1781456400,
+  "txHash": "0x247cfe128bd8403a8699100b638583537502cfb81e5f637347cfda1023a2be15",
+  "blockNumber": 112018969,
+  "deployedAt": "2026-06-07T17:00:06.306Z"
+}

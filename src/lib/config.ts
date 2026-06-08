@@ -27,10 +27,3 @@ export const config = {
   bscScan: isMainnet ? "https://bscscan.com" : "https://testnet.bscscan.com",
   bscTrace: isMainnet ? "https://bsctrace.com" : "https://testnet.bscscan.com",
 };
-
-// Small helpers so explorer URLs aren't hand-built at each call site.
-export const explorer = {
-  tx: (hash: string) => `${config.bscScan}/tx/${hash}`,
-  address: (addr: string) => `${config.bscScan}/address/${addr}`,
-  contract: (addr: string) => `${config.bscTrace}/address/${addr}`,
-};

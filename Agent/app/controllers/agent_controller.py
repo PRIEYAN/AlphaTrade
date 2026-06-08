@@ -1,6 +1,6 @@
 """Agent decision pipeline:
 
-  signals (caller) + live on-chain context (BNB agent)
+  signals (caller-provided: CMC + optional on-chain context)
     -> Groq proposes ONE action as JSON        (advisory)
     -> schema validation                        (pydantic)
     -> deterministic guardrails                 (pure code)
@@ -18,14 +18,12 @@ from ..models.guardrails import safe_hold_fallback, validate_decision
 from ..models.prompts import SYSTEM_PROMPT
 from ..models.sanitizer import sanitize_strategy
 from ..models.schemas import Decision, DecideRequest
-from ..services.bnb_service import BnbService
 from ..services.groq_service import GroqService
 
 
 class AgentController:
-    def __init__(self, groq: GroqService, bnb: BnbService) -> None:
+    def __init__(self, groq: GroqService) -> None:
         self.groq = groq
-        self.bnb = bnb
 
     def decide(self, req: DecideRequest) -> dict[str, Any]:
         g = req.guardrails
@@ -43,19 +41,14 @@ class AgentController:
                     "reasons": [reason],
                 },
                 "raw": None,
+                "error": None,
             }
 
         strategy = sanitize_strategy(req.strategy)
-
-        # Enrich signals with live BNB on-chain context if the caller didn't.
         signals = dict(req.signals or {})
-        if not signals.get("onchain"):
-            try:
-                signals["onchain"] = self.bnb.get_onchain_context()
-            except Exception:
-                pass  # on-chain context is best-effort, never fatal
 
         raw: str | None = None
+        error: str | None = None
 
         if not self.groq.configured:
             # Deterministic, clearly-labelled demo when no key is configured.
@@ -86,8 +79,15 @@ class AgentController:
                 decision = Decision(**json.loads(raw))
             except (json.JSONDecodeError, ValidationError):
                 decision = safe_hold_fallback("Schema validation failed.")
-            except Exception:
+                error = "The AI returned malformed output — held as a precaution."
+            except Exception as exc:  # auth / upstream failure
                 decision = safe_hold_fallback("Upstream AI error — defaulting to hold.")
+                status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+                error = (
+                    "Groq rejected the API key (401). Set a valid GROQ_API_KEY."
+                    if status == 401
+                    else f"Upstream AI error{f' ({status})' if status else ''} — the model call failed."
+                )
 
         validation = validate_decision(decision, g)
-        return {"decision": decision.model_dump(), "validation": validation, "raw": raw}
+        return {"decision": decision.model_dump(), "validation": validation, "raw": raw, "error": error}

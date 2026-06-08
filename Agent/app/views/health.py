@@ -12,8 +12,8 @@ def health():
             "service": "alphatrade-agent",
             "integrations": {
                 "groq": cfg.groq_configured,
-                "bnbRpc": cfg.BNB_RPC,
-                "chainId": cfg.CHAIN_ID,
+                "bnbAgentSdk": cfg.bnb_configured,
+                "bnbNetwork": cfg.BNB_NETWORK,
             },
         }
     )

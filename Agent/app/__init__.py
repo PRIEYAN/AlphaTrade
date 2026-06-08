@@ -15,7 +15,7 @@ from flask_cors import CORS
 from .config import Config
 from .controllers.agent_controller import AgentController
 from .controllers.bnb_controller import BnbController
-from .services.bnb_service import BnbService
+from .services.bnb_service import BnbAgentService
 from .services.groq_service import GroqService
 from .views.agent import bp as agent_bp
 from .views.bnb import bp as bnb_bp
@@ -38,9 +38,9 @@ def create_app() -> Flask:
 
     # Wire services + controllers once, attach to the app (dependency container).
     groq = GroqService(cfg.GROQ_API_KEY, cfg.GROQ_MODEL)
-    bnb = BnbService(cfg.BNB_RPC, cfg.CHAIN_ID)
+    bnb = BnbAgentService(cfg.BNB_NETWORK, cfg.WALLET_PASSWORD, cfg.PRIVATE_KEY)
     app.extensions["agent_config"] = cfg
-    app.extensions["agent_controller"] = AgentController(groq, bnb)
+    app.extensions["agent_controller"] = AgentController(groq)
     app.extensions["bnb_controller"] = BnbController(bnb)
 
     app.register_blueprint(health_bp)

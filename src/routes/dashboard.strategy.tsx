@@ -5,7 +5,7 @@ import { useApp } from "@/lib/store";
 import { fetchSignals } from "@/lib/services/cmcService";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount, useBalance } from "wagmi";
-import { bsc } from "wagmi/chains";
+import { appChain } from "@/lib/wagmi";
 import { formatUnits } from "viem";
 import { Sparkles, Loader2, Rocket } from "lucide-react";
 import { toast } from "sonner";
@@ -29,7 +29,7 @@ function StrategyPage() {
   const [result, setResult] = useState<DecisionResp | null>(null);
 
   const { address, isConnected } = useAccount();
-  const { data: bal } = useBalance({ address, chainId: bsc.id, query: { enabled: isConnected } });
+  const { data: bal } = useBalance({ address, chainId: appChain.id, query: { enabled: isConnected } });
 
   const signalsQ = useQuery({ queryKey: ["signals"], queryFn: fetchSignals });
   const signals = signalsQ.data;

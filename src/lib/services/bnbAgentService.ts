@@ -1,16 +1,20 @@
 // BNB on-chain agent layer — real reads from BNB Smart Chain via viem.
-// viem IS the EVM/BNB SDK here: it talks to the chain over the public (or
-// configured) RPC. No API key required for reads. Used by /api/bnb/context to
-// give the agent live network conditions (block height, gas) as a real signal.
+// viem is the EVM/BNB SDK here: it talks to the chain over the configured RPC.
+// No API key required for reads. Chain is env-switchable, defaulting to TESTNET.
 import { createPublicClient, http, formatGwei } from "viem";
-import { bsc } from "viem/chains";
+import { bsc, bscTestnet } from "viem/chains";
+
+const chainId = Number(process.env.VITE_CHAIN_ID || 97);
+const chain = chainId === 56 ? bsc : bscTestnet;
 
 const rpc =
   process.env.BNB_AGENT_RPC ||
   process.env.VITE_BSC_RPC_URL ||
-  "https://bsc-dataseed.binance.org";
+  (chain.id === bsc.id
+    ? "https://bsc-dataseed.binance.org"
+    : "https://bsc-testnet-rpc.publicnode.com");
 
-const client = createPublicClient({ chain: bsc, transport: http(rpc) });
+const client = createPublicClient({ chain, transport: http(rpc) });
 
 export type OnChainContext = {
   chainId: number;
@@ -20,14 +24,14 @@ export type OnChainContext = {
 };
 
 export const bnbAgentService = {
-  /** Live BNB Smart Chain context (real RPC reads). */
+  /** Live BNB Smart Chain context (block height, gas price). */
   async getOnChainContext(): Promise<OnChainContext> {
     const [blockNumber, gasPrice] = await Promise.all([
       client.getBlockNumber(),
       client.getGasPrice(),
     ]);
     return {
-      chainId: bsc.id,
+      chainId: chain.id,
       blockNumber: Number(blockNumber),
       gasPriceGwei: Number(Number(formatGwei(gasPrice)).toFixed(3)),
       rpc,

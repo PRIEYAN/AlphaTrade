@@ -1,22 +1,36 @@
-// Real wallet configuration (wagmi + viem) for BNB Smart Chain (id 56).
+// Real wallet configuration (wagmi + viem). Chain is env-switchable and
+// defaults to BNB Smart Chain TESTNET (id 97):
+//   VITE_CHAIN_ID=97  -> bscTestnet  (default)
+//   VITE_CHAIN_ID=56  -> bsc (mainnet)
 //
-// - The `injected` connector (MetaMask / Trust Wallet extension, plus any
-//   EIP-6963-discovered wallet) works with ZERO setup — no keys required.
-// - The WalletConnect connector (Trust Wallet MOBILE via QR) is added only when
-//   VITE_WALLETCONNECT_PROJECT_ID is present. Grab a free id at
-//   https://cloud.reown.com (formerly WalletConnect Cloud).
+// - `injected` (MetaMask / Trust Wallet extension, + EIP-6963 wallets) needs no keys.
+// - WalletConnect (Trust Wallet mobile via QR) activates when
+//   VITE_WALLETCONNECT_PROJECT_ID is set (free id at https://cloud.reown.com).
 import { createConfig, http } from "wagmi";
-import { bsc } from "wagmi/chains";
+import { bsc, bscTestnet } from "wagmi/chains";
 import { injected, walletConnect } from "wagmi/connectors";
 
+const chainId = Number(import.meta.env.VITE_CHAIN_ID ?? 97);
+
+/** The active chain for the whole app. Import this everywhere instead of a
+ *  hardcoded chain so mainnet/testnet flips with one env var. */
+export const appChain = chainId === 56 ? bsc : bscTestnet;
+
 const projectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID as string | undefined;
-const rpcUrl = (import.meta.env.VITE_BSC_RPC_URL as string) || "https://bsc-dataseed.binance.org";
+const customRpc = import.meta.env.VITE_BSC_RPC_URL as string | undefined;
+// VITE_BSC_RPC_URL overrides the ACTIVE chain's RPC; each chain keeps a sane default.
+const testnetRpc =
+  appChain.id === bscTestnet.id && customRpc ? customRpc : "https://bsc-testnet-rpc.publicnode.com";
+const mainnetRpc =
+  appChain.id === bsc.id && customRpc ? customRpc : "https://bsc-dataseed.binance.org";
 
 /** True when WalletConnect (mobile) is configured. */
 export const hasWalletConnect = Boolean(projectId);
 
 export const wagmiConfig = createConfig({
-  chains: [bsc],
+  // Both chains are registered (testnet default); `appChain` is the one the app
+  // reads/writes. Components pass chainId: appChain.id explicitly.
+  chains: [bscTestnet, bsc],
   ssr: true, // app is server-rendered; defer wallet state until hydration
   connectors: [
     injected({ shimDisconnect: true }),
@@ -36,7 +50,8 @@ export const wagmiConfig = createConfig({
       : []),
   ],
   transports: {
-    [bsc.id]: http(rpcUrl),
+    [bscTestnet.id]: http(testnetRpc),
+    [bsc.id]: http(mainnetRpc),
   },
 });
 

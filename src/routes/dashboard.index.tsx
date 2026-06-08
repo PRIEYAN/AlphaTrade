@@ -3,7 +3,7 @@ import { BrutalCard, StickerTag } from "@/components/brutal";
 import { useApp } from "@/lib/store";
 import { WalletButton } from "@/components/wallet-button";
 import { useAccount, useBalance } from "wagmi";
-import { bsc } from "wagmi/chains";
+import { appChain } from "@/lib/wagmi";
 import { formatUnits } from "viem";
 import { useQuery } from "@tanstack/react-query";
 import { Play, Square, Power, Zap, LineChart, PieChart, Wallet } from "lucide-react";
@@ -16,7 +16,7 @@ export const Route = createFileRoute("/dashboard/")({
 function Overview() {
   const { running, setRunning, autonomous, setAutonomous, killSwitch, setKill, guardrails } = useApp();
   const { address, isConnected } = useAccount();
-  const { data: bal } = useBalance({ address, chainId: bsc.id, query: { enabled: isConnected } });
+  const { data: bal } = useBalance({ address, chainId: appChain.id, query: { enabled: isConnected } });
   const bnb = bal ? Number(formatUnits(bal.value, bal.decimals)) : null;
   // Live BNB Smart Chain context (real RPC reads via the BNB agent layer).
   const netCtx = useQuery({
@@ -47,7 +47,7 @@ function Overview() {
         <Kpi
           label="Network"
           tone="lime"
-          value="BSC · 56"
+          value={`BSC · ${appChain.id}`}
           sub={
             netCtx.data?.ok
               ? `blk ${netCtx.data.blockNumber} · ${netCtx.data.gasPriceGwei?.toFixed(2)} gwei`

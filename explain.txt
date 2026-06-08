@@ -1,0 +1,120 @@
+===============================================================================
+ ALPHATRADE — WHAT IT IS & HOW TO USE IT  (plain English)
+===============================================================================
+
+WHAT IS ALPHATRADE?
+-------------------
+AlphaTrade is an AI helper for crypto trading on BNB Chain (it runs on the BNB
+TESTNET by default — a practice network with free, fake coins, so you can try
+everything with zero real money at risk).
+
+Think of it as an assistant that:
+  1. READS the market (how greedy/fearful people are, network conditions),
+  2. THINKS using an AI (Groq) about what to do next,
+  3. CHECKS that idea against YOUR safety rules,
+  4. and only then SIGNS a trade with YOUR wallet — your keys stay with you.
+
+The most important idea: the AI only SUGGESTS. It can never move your money on
+its own. Every AI suggestion must pass your hard rules ("guardrails") first, and
+nothing happens on-chain unless your own wallet signs it. You're always in
+control, and there is a big "Kill Switch" to stop everything instantly.
+
+WHAT IS IT FOR?
+---------------
+- Letting an AI watch the market and propose trades, while YOU keep the safety
+  limits and the final say.
+- Doing this self-custodially: no company holds your coins; your wallet signs.
+- Competing in an on-chain trading competition on BNB Chain (you register your
+  agent wallet, then your results are tracked).
+
+THE TOP BAR (always visible)
+----------------------------
+- "Connect Wallet": links your crypto wallet (MetaMask / Trust Wallet). Nothing
+  trades until you connect. On testnet, make sure your wallet is on "BSC Testnet"
+  (the app shows a "Switch to BSC" button if it isn't) and grab free test coins
+  from the faucet.
+- "Kill Switch": one click stops the agent completely. While it's on, the AI
+  refuses to produce any trade and nothing can be signed. Use it any time.
+
+THE FOUR PAGES (left menu)
+==========================
+
+1) OVERVIEW  — "the dashboard / home screen"
+   WHAT IT SHOWS:
+     - Your real wallet balance (BNB) read live from the blockchain.
+     - The live network status (which chain, current block, gas price).
+     - The agent's state (Running / Paused) and your controls.
+   HOW TO USE IT:
+     - Connect your wallet to see your real balance.
+     - Use Start / Stop / Autonomous / Kill Switch to control the agent.
+     - Note: the portfolio history chart and profit (PnL) numbers are empty on
+       purpose — they need saved history over time, and we never show fake
+       numbers. They fill in only when real history exists.
+
+2) GUARDRAILS  — "your safety rules"
+   WHAT IT IS:
+     - The hard limits the AI is NOT allowed to break. This is the safety net.
+   THE RULES YOU SET:
+     - Max % per trade        (e.g. never risk more than 10% in one trade)
+     - Daily trade cap        (max number of trades per day)
+     - Daily spend limit ($)  (max money spent per day)
+     - Max drawdown %         (stop if losses get this deep)
+     - Slippage %             (max price slippage you'll accept; capped at 5%)
+     - Min confidence         (ignore the AI unless it's at least this sure)
+     - Token allowlist        (only these coins are allowed)
+   HOW TO USE IT:
+     - Set your comfort levels and click "Save guardrails".
+     - These rules are enforced by plain code (not the AI), so the AI can't talk
+       its way past them. If a suggestion breaks any rule, it is REJECTED.
+
+3) STRATEGY + AI  — "tell the AI your plan, get a decision"
+   WHAT IT DOES:
+     - You write your trading idea in plain English. The AI reads it plus the
+       live market signals and proposes ONE action (buy / sell / hold).
+   HOW TO USE IT:
+     - Type your strategy, e.g. "Rotate up to 5% from USDT into BNB when Fear &
+       Greed is above 60. Hold otherwise."
+     - Pick which signals to use (Fear & Greed, Funding, Sentiment, Momentum).
+     - Click "Run Analysis". You'll get one of:
+         * GREEN "APPROVED"  = a real decision that passed your guardrails.
+         * "REJECTED"        = the AI's idea broke a rule (it tells you which).
+         * ORANGE "AI ERROR" = the AI couldn't run (usually a missing/invalid
+                               GROQ_API_KEY) — nothing is faked.
+     - If a trade is APPROVED, an "Execute via Trust Wallet" button appears so
+       you can actually place it (this signs with your wallet).
+   NOTE: With no AI key configured, this page honestly says AI is disabled — it
+   will NOT invent a fake decision.
+
+4) ACTIVITY  — "the proof / history page"
+   WHAT IT SHOWS:
+     - Competition: your registration status + a link to the on-chain contract.
+       "Register Agent" puts your wallet into the competition.
+     - Trade Log: your real recent on-chain transactions (from the explorer).
+     - AI Decisions & x402 Payments: these are empty until that history is saved
+       — again, no fake rows are ever shown.
+   HOW TO USE IT:
+     - Connect your wallet to see your real transaction history.
+     - Click "Register Agent" to join the competition (needs the contract +,
+       for a real on-chain register, Trust Wallet credentials; otherwise it
+       clearly says "simulated").
+
+WHAT YOU NEED FOR EACH FEATURE (optional keys)
+----------------------------------------------
+The app runs with NO keys (wallet connect + live balance + live network work).
+Add keys to "switch on" more, each shows an honest "not configured" state until
+you do:
+  - Connect mobile wallet (QR) : VITE_WALLETCONNECT_PROJECT_ID  (cloud.reown.com)
+  - Real AI decisions          : GROQ_API_KEY                   (console.groq.com)
+  - Live Fear & Greed signal   : CMC_AGENT_API_KEY              (coinmarketcap.com)
+  - Real trade history         : BSCSCAN_API_KEY                (bscscan.com)
+  - Balances / trade signing   : TW_ACCESS_ID + TW_HMAC_SECRET  (trustwallet.com)
+(See setup.txt for the full step-by-step, and info.txt for the technical detail.)
+
+THE SAFETY PROMISE (in one line)
+--------------------------------
+AI suggests -> your guardrails (plain code) approve or reject -> your wallet
+signs. Kill Switch stops it all. No fake data anywhere — if something isn't
+available, the app says so instead of making numbers up. And by default it's all
+on TESTNET, so you can practice with no real money.
+
+===============================================================================

@@ -3,6 +3,7 @@ import { LayoutDashboard, Shield, Sparkles, Activity, Power, ArrowLeft } from "l
 import { useAccount } from "wagmi";
 import { useApp } from "@/lib/store";
 import { WalletButton } from "@/components/wallet-button";
+import { config } from "@/lib/config";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -35,7 +36,7 @@ function DashboardLayout() {
               <span className="border-brutal bg-ink text-paper px-2 py-0.5 shadow-brutal-sm">A/</span>
               ALPHATRADE
             </Link>
-            <span className="hidden md:inline-block border-brutal bg-lime px-2 py-0.5 font-mono text-xs shadow-brutal-sm">BSC · 56</span>
+            <span className="hidden md:inline-block border-brutal bg-lime px-2 py-0.5 font-mono text-xs shadow-brutal-sm">BSC · {config.chainId}</span>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -75,7 +76,7 @@ function DashboardLayout() {
             <div className="mb-6 border-brutal bg-orange p-4 shadow-brutal-sm flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="font-display uppercase">Connect a wallet to continue</div>
-                <div className="text-sm">BNB Smart Chain (56) only. Signing flows through Trust Wallet Agent Kit.</div>
+                <div className="text-sm">BNB Smart Chain ({config.chainId}) only. Signing flows through Trust Wallet Agent Kit.</div>
               </div>
               <WalletButton />
             </div>

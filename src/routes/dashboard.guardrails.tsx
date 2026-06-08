@@ -72,7 +72,7 @@ function GuardrailsPage() {
 
           <div>
             <div className="font-display text-xs uppercase mb-2">Token allowlist</div>
-            <div className="text-xs text-ink/60 mb-3 font-mono">Only the 149 competition-eligible BEP-20 tokens count toward your score.</div>
+            <div className="text-xs text-ink/60 mb-3 font-mono">Only the {allowedTokens.length} competition-eligible BEP-20 tokens count toward your score.</div>
             <div className="flex flex-wrap gap-2">
               {allowedTokens.map((t) => {
                 const on = allowlist.includes(t);

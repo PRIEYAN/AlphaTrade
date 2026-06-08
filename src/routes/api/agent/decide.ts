@@ -75,15 +75,9 @@ export const Route = createFileRoute("/api/agent/decide")({
         let error: string | null = null;
 
         if (!apiKey) {
-          // Deterministic demo fallback when no key is configured.
-          decision = {
-            action: "buy",
-            tokenIn: "USDT",
-            tokenOut: "BNB",
-            sizePercent: Math.min(5, g.maxPerTradePct),
-            confidence: 0.72,
-            reasoning: "Demo decision (no GROQ_API_KEY configured). Market sentiment positive; small rotation into BNB.",
-          };
+          // No key configured — be honest, never fabricate a tradeable decision.
+          decision = safeHoldFallback("GROQ_API_KEY not configured — AI decisions disabled.");
+          error = "GROQ_API_KEY not configured on the server — AI decisions are disabled.";
         } else {
           try {
             const groq = new Groq({ apiKey });

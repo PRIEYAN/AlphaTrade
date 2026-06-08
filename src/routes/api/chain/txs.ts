@@ -23,7 +23,8 @@ export const Route = createFileRoute("/api/chain/txs")({
         if (!key) {
           return Response.json({ configured: false, txs: [] as Tx[], note: "Set BSCSCAN_API_KEY to load on-chain history." });
         }
-        const api = process.env.BSCSCAN_API_URL || "https://api.bscscan.com/api";
+        // Testnet by default; override with BSCSCAN_API_URL (mainnet: https://api.bscscan.com/api).
+        const api = process.env.BSCSCAN_API_URL || "https://api-testnet.bscscan.com/api";
         try {
           const url = `${api}?module=account&action=txlist&address=${address}&page=1&offset=15&sort=desc&apikey=${key}`;
           const res = await fetch(url);

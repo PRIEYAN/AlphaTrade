@@ -150,7 +150,7 @@ function HeroMockup() {
         </div>
         <div className="border-brutal bg-pink p-3">
           <div className="text-[10px] font-display uppercase">Status</div>
-          <div className="font-display text-xl">LIVE</div>
+          <div className="font-display text-xl">PREVIEW</div>
         </div>
       </div>
       <div className="mt-4 border-brutal bg-paper p-3">
@@ -168,7 +168,7 @@ function HeroMockup() {
       </div>
       <div className="mt-3 flex items-center gap-2 text-xs font-mono">
         <span className="inline-block size-2 bg-lime border border-ink rounded-full animate-pulse" />
-        Guardrails passed · TWAK signed · tx 0x4a…d2c
+        Guardrails passed · TWAK signed · tx 0x…
       </div>
     </BrutalCard>
   );
@@ -177,7 +177,7 @@ function HeroMockup() {
 function StatsBand() {
   const stats = [
     { v: 100, suffix: "%", label: "Self-custody" },
-    { v: 30, suffix: "+", label: "Chains" },
+    { v: 30, suffix: "+", label: "TWAK chains" },
     { v: 402, suffix: "", label: "x402 native" },
     { v: 1.2, suffix: "s", label: "Groq decisions" },
   ];
@@ -328,7 +328,7 @@ function FAQ() {
   const items = [
     { q: "Is AlphaTrade custodial?", a: "No. Signing happens through Trust Wallet Agent Kit. Your private keys never touch our servers and never reach the browser." },
     { q: "Can the AI move funds without my rules?", a: "No. Every Groq decision is validated against your guardrails (allowlist, size caps, drawdown, confidence floor) before any swap is signed. Raw LLM output cannot trigger a transaction." },
-    { q: "What chains are supported?", a: "BNB Chain (id 56) at launch. Trust Wallet Agent Kit's coverage extends to 30+ chains; more come online as the agent stack matures." },
+    { q: "What chains are supported?", a: "BNB Chain testnet (id 97) by default; flip to mainnet (id 56) with one env var. Trust Wallet Agent Kit's coverage extends to 30+ chains; more come online as the agent stack matures." },
     { q: "What if Groq returns garbage?", a: "Output is zod-validated. On malformed responses the agent falls back to a safe 'hold' decision and logs the rejection." },
     { q: "What's the Kill Switch?", a: "A one-click global stop. When engaged, /api/agent/decide refuses to produce executable decisions and no swap is ever sent." },
   ];
@@ -414,7 +414,7 @@ function Landing() {
   return (
     <div className="min-h-screen bg-paper">
       <Navbar />
-      <Marquee items={["AGENT LIVE", "BSC CHAIN 56", "GROQ POWERED", "x402 NATIVE", "SELF-CUSTODY", "12K USERS", "ZERO RUG PULLS"]} />
+      <Marquee items={["AGENT LIVE", "BSC TESTNET 97", "GROQ POWERED", "x402 NATIVE", "SELF-CUSTODY", "NON-CUSTODIAL"]} />
       <Hero />
       <StatsBand />
       <HowItWorks />

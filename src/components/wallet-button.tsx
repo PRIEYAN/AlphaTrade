@@ -7,7 +7,7 @@ import {
   useChainId,
   useSwitchChain,
 } from "wagmi";
-import { bsc } from "wagmi/chains";
+import { appChain } from "@/lib/wagmi";
 import { formatUnits } from "viem";
 import { Wallet, Loader2, ChevronDown, Power, AlertTriangle } from "lucide-react";
 
@@ -29,17 +29,17 @@ export function WalletButton() {
   const { switchChain, isPending: switching } = useSwitchChain();
   const { data: bal } = useBalance({
     address,
-    chainId: bsc.id,
+    chainId: appChain.id,
     query: { enabled: isConnected },
   });
   const [open, setOpen] = useState(false);
 
   if (isConnected) {
-    // Connected but on the wrong network — must be BSC (56) to trade.
-    if (chainId !== bsc.id) {
+    // Connected but on the wrong network — must be the app's chain to trade.
+    if (chainId !== appChain.id) {
       return (
         <button
-          onClick={() => switchChain({ chainId: bsc.id })}
+          onClick={() => switchChain({ chainId: appChain.id })}
           disabled={switching}
           className="inline-flex items-center gap-2 border-brutal bg-destructive text-destructive-foreground px-3 py-2 font-display text-xs uppercase shadow-brutal-sm"
         >
@@ -95,7 +95,7 @@ export function WalletButton() {
                 {c.name}
               </button>
             ))}
-            <div className="px-1 pt-1 text-[10px] font-mono text-ink/50">BNB Smart Chain · 56</div>
+            <div className="px-1 pt-1 text-[10px] font-mono text-ink/50">BNB Smart Chain · {appChain.id}</div>
           </div>
         </>
       )}

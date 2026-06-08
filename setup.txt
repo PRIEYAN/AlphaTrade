@@ -42,8 +42,10 @@ workflow.
 -------------------------------------------------------------------------------
  1. (C) SMART CONTRACT — deploy first so you have an address
 -------------------------------------------------------------------------------
- (You can SKIP this and use the reference contract already wired in the web app:
-  0x212c61b9b72c95d95bf29cf032f5e5635629aed5  — then jump to step 2.)
+ (The app DEFAULTS TO BSC TESTNET (chain 97), which has NO reference contract,
+  so deploy your own below and paste the address into the web app .env at step 2.
+  You CAN run the app without a contract — everything works except the on-chain
+  "Register Agent" link; the register button still works in simulated mode.)
 
    cd blockchain
    npm install
@@ -75,10 +77,15 @@ workflow.
    npm install
    cp .env.example .env          # PowerShell: Copy-Item .env.example .env
 
-  Edit .env (repo root). Minimum to RUN with real wallet + balances (no keys):
-     VITE_BSC_RPC_URL=https://bsc-dataseed.binance.org
-     VITE_CHAIN_ID=56
-     VITE_COMPETITION_CONTRACT=0x...   # from step 1 (or the reference address)
+  The app DEFAULTS TO BSC TESTNET (chain 97); the .env.example values are already
+  testnet, so the minimum to RUN with a real wallet + balances (no API keys) is
+  just `cp .env.example .env`. Key values:
+     VITE_CHAIN_ID=97
+     VITE_BSC_RPC_URL=https://bsc-testnet-rpc.publicnode.com
+     VITE_COMPETITION_CONTRACT=0x...   # from step 1 (leave blank to skip on-chain register link)
+  Your wallet must be on BSC Testnet (97) — the header shows a "Switch to BSC"
+  button if it isn't. Get free test BNB: https://testnet.bnbchain.org/faucet-smart
+  (To run on mainnet instead: set VITE_CHAIN_ID=56 + a mainnet RPC and contract.)
 
   Add these to light up each feature (all server-only except the VITE_ one):
      VITE_WALLETCONNECT_PROJECT_ID=    # Trust Wallet mobile via QR  (cloud.reown.com)

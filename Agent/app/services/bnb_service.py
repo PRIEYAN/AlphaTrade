@@ -8,14 +8,25 @@ boots when the wallet password / key aren't configured yet.
 """
 from __future__ import annotations
 
+import json
+from urllib import request
 from typing import Any, Optional
 
 
 class BnbAgentService:
-    def __init__(self, network: str, password: str, private_key: str) -> None:
+    def __init__(
+        self,
+        network: str,
+        password: str,
+        private_key: str,
+        chain_id: int,
+        rpc_url: str,
+    ) -> None:
         self.network = network
         self._password = password
         self._private_key = private_key or None  # only needed on first run
+        self._chain_id = chain_id
+        self._rpc_url = rpc_url
         self._sdk: Optional[Any] = None
 
     @property
@@ -60,4 +71,35 @@ class BnbAgentService:
             "transactionHash": result.get("transactionHash"),
             "agentUri": agent_uri,
             "network": self.network,
+        }
+
+    def _rpc(self, method: str) -> str:
+        payload = json.dumps(
+            {"jsonrpc": "2.0", "id": 1, "method": method, "params": []}
+        ).encode("utf-8")
+        req = request.Request(
+            self._rpc_url,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with request.urlopen(req, timeout=10) as res:
+            body = json.loads(res.read().decode("utf-8"))
+        if "error" in body:
+            message = body["error"].get("message", "RPC error")
+            raise RuntimeError(message)
+        result = body.get("result")
+        if not isinstance(result, str):
+            raise RuntimeError(f"RPC method {method} returned no result")
+        return result
+
+    def get_on_chain_context(self) -> dict[str, Any]:
+        """Live BNB Smart Chain context (block height, gas price)."""
+        block_number = int(self._rpc("eth_blockNumber"), 16)
+        gas_price_wei = int(self._rpc("eth_gasPrice"), 16)
+        return {
+            "chainId": self._chain_id,
+            "blockNumber": block_number,
+            "gasPriceGwei": round(gas_price_wei / 1_000_000_000, 3),
+            "rpc": self._rpc_url,
         }

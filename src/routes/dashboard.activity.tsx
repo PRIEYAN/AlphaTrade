@@ -3,9 +3,10 @@ import { BrutalCard, StickerTag } from "@/components/brutal";
 import { config } from "@/lib/config";
 import { WalletButton } from "@/components/wallet-button";
 import { ExternalLink, Trophy, Bot, Coins, Inbox } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { useAccount } from "wagmi";
+import { useAccount, useReadContract, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { appChain } from "@/lib/wagmi";
 import { useQuery } from "@tanstack/react-query";
 
 export const Route = createFileRoute("/dashboard/activity")({
@@ -19,10 +20,61 @@ type TxResp = {
   error?: string;
 };
 
+const competitionRegistryAbi = [
+  {
+    type: "function",
+    name: "isRegistered",
+    stateMutability: "view",
+    inputs: [{ name: "agent", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "register",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [],
+  },
+] as const;
+
+const isContractAddress = (value: string): value is `0x${string}` => /^0x[a-fA-F0-9]{40}$/.test(value);
+
 function ActivityPage() {
   const { address, isConnected } = useAccount();
   const [registered, setRegistered] = useState(false);
-  const [registering, setRegistering] = useState(false);
+  const [registerPending, setRegisterPending] = useState(false);
+  const contractAddress = config.competitionContract;
+  const canUseContract = isContractAddress(contractAddress);
+  const { writeContractAsync } = useWriteContract();
+
+  const { data: isRegisteredOnChain, refetch: refetchRegistered } = useReadContract({
+    abi: competitionRegistryAbi,
+    address: canUseContract ? contractAddress : undefined,
+    functionName: "isRegistered",
+    args: address ? [address] : undefined,
+    chainId: appChain.id,
+    query: { enabled: isConnected && !!address && canUseContract },
+  });
+
+  const [registrationTx, setRegistrationTx] = useState<`0x${string}` | undefined>();
+  const receiptQ = useWaitForTransactionReceipt({
+    hash: registrationTx,
+    chainId: appChain.id,
+    query: { enabled: !!registrationTx },
+  });
+
+  useEffect(() => {
+    if (isRegisteredOnChain) setRegistered(true);
+  }, [isRegisteredOnChain]);
+
+  useEffect(() => {
+    if (receiptQ.isSuccess) {
+      setRegistered(true);
+      setRegisterPending(false);
+      refetchRegistered();
+      toast.success("Agent registered on-chain");
+    }
+  }, [receiptQ.isSuccess, refetchRegistered]);
 
   const txsQ = useQuery({
     queryKey: ["txs", address],
@@ -34,29 +86,51 @@ function ActivityPage() {
   });
 
   const register = async () => {
-    setRegistering(true);
+    if (!isConnected || !address) {
+      toast.error("Connect a wallet before registering");
+      return;
+    }
+    if (!canUseContract) {
+      toast.error("Competition contract is not configured");
+      return;
+    }
+    setRegisterPending(true);
     try {
       // Signing is server-side — the browser never sees TWAK credentials.
       const res = await fetch("/api/twak/register", { method: "POST" });
       const data = await res.json();
       if (!res.ok) {
-        toast.error(data.error ?? "Registration failed");
+        const canFallbackToWallet = res.status === 501 && String(data.error ?? "").includes("TWAK_REGISTER_PATH");
+        if (!canFallbackToWallet) {
+          setRegisterPending(false);
+          toast.error(data.error ?? "Registration failed");
+          return;
+        }
+        const hash = await writeContractAsync({
+          abi: competitionRegistryAbi,
+          address: contractAddress,
+          functionName: "register",
+          chainId: appChain.id,
+        });
+        setRegistrationTx(hash);
+        toast.message("Registration submitted on-chain");
         return;
       }
       setRegistered(Boolean(data.registered));
+      setRegisterPending(false);
       if (data.simulated) {
         toast.message("Registered (simulated — TWAK not configured)");
       } else {
         toast.success("Agent registered for competition");
       }
-    } catch {
-      toast.error("Registration request failed");
-    } finally {
-      setRegistering(false);
+    } catch (err) {
+      setRegisterPending(false);
+      toast.error(err instanceof Error ? err.message : "Registration request failed");
     }
   };
 
   const txs = txsQ.data?.txs ?? [];
+  const registering = registerPending || receiptQ.isLoading || receiptQ.isFetching;
 
   return (
     <div className="space-y-6">
@@ -76,7 +150,7 @@ function ActivityPage() {
           </div>
           <div className="text-paper/70 text-sm font-mono">Status: {registered ? "REGISTERED ✓" : "Not registered"}</div>
         </div>
-        <button onClick={register} disabled={registered || registering}
+        <button onClick={register} disabled={!isConnected || registered || registering}
           className="inline-flex items-center gap-2 border-2 border-paper bg-lime text-ink px-4 py-2 font-display uppercase shadow-[5px_5px_0_0_#f5f1e0] disabled:opacity-50">
           <Trophy className="size-4" /> {registered ? "Registered" : registering ? "Registering…" : "Register Agent"}
         </button>

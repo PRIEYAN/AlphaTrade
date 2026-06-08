@@ -17,3 +17,6 @@ class BnbController:
         endpoints: list[dict[str, str]],
     ) -> dict[str, Any]:
         return self.bnb.register(name, description, endpoints)
+
+    def get_on_chain_context(self) -> dict[str, Any]:
+        return self.bnb.get_on_chain_context()

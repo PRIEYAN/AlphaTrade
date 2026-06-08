@@ -4,6 +4,13 @@ from __future__ import annotations
 
 import os
 
+_chain_id = int(os.environ.get("CHAIN_ID", os.environ.get("VITE_CHAIN_ID", "97")))
+_default_bnb_rpc = (
+    "https://bsc-dataseed.binance.org"
+    if _chain_id == 56
+    else "https://bsc-testnet-rpc.publicnode.com"
+)
+
 
 class Config:
     # Groq AI decision engine
@@ -12,6 +19,11 @@ class Config:
 
     # BNB AI Agent SDK (bnbagent) — ERC-8004 identity layer.
     BNB_NETWORK: str = os.environ.get("BNB_NETWORK", "bsc-testnet")
+    CHAIN_ID: int = _chain_id
+    BNB_AGENT_RPC: str = os.environ.get(
+        "BNB_AGENT_RPC",
+        os.environ.get("VITE_BSC_RPC_URL", _default_bnb_rpc),
+    )
     WALLET_PASSWORD: str = os.environ.get("WALLET_PASSWORD", "")
     PRIVATE_KEY: str = os.environ.get("PRIVATE_KEY", "")  # first run only
     AGENT_NAME: str = os.environ.get("AGENT_NAME", "alphatrade-agent")

@@ -38,7 +38,13 @@ def create_app() -> Flask:
 
     # Wire services + controllers once, attach to the app (dependency container).
     groq = GroqService(cfg.GROQ_API_KEY, cfg.GROQ_MODEL)
-    bnb = BnbAgentService(cfg.BNB_NETWORK, cfg.WALLET_PASSWORD, cfg.PRIVATE_KEY)
+    bnb = BnbAgentService(
+        cfg.BNB_NETWORK,
+        cfg.WALLET_PASSWORD,
+        cfg.PRIVATE_KEY,
+        cfg.CHAIN_ID,
+        cfg.BNB_AGENT_RPC,
+    )
     app.extensions["agent_config"] = cfg
     app.extensions["agent_controller"] = AgentController(groq)
     app.extensions["bnb_controller"] = BnbController(bnb)

@@ -3,5 +3,11 @@ flask-cors>=4.0
 python-dotenv>=1.0
 pydantic>=2.7,<3.0
 groq>=0.11
-web3>=6.20,<8.0
+
+# BNB AI Agent SDK — ERC-8004 identity registration + ERC-8183 job server.
+# [server,ipfs] pulls the FastAPI server + IPFS storage extras (web3 comes
+# transitively). The ERC-8183 server (agent_server.py) is run with uvicorn.
+bnbagent[server,ipfs]
+uvicorn[standard]>=0.30
+
 gunicorn>=22.0

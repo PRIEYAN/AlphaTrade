@@ -10,13 +10,17 @@ class Config:
     GROQ_API_KEY: str = os.environ.get("GROQ_API_KEY", "")
     GROQ_MODEL: str = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 
-    # BNB Smart Chain (on-chain agent layer)
-    BNB_RPC: str = (
-        os.environ.get("BNB_AGENT_RPC")
-        or os.environ.get("VITE_BSC_RPC_URL")
-        or "https://bsc-dataseed.binance.org"
+    # BNB AI Agent SDK (bnbagent) — ERC-8004 identity layer.
+    BNB_NETWORK: str = os.environ.get("BNB_NETWORK", "bsc-testnet")
+    WALLET_PASSWORD: str = os.environ.get("WALLET_PASSWORD", "")
+    PRIVATE_KEY: str = os.environ.get("PRIVATE_KEY", "")  # first run only
+    AGENT_NAME: str = os.environ.get("AGENT_NAME", "alphatrade-agent")
+    AGENT_DESCRIPTION: str = os.environ.get(
+        "AGENT_DESCRIPTION", "AlphaTrade autonomous trading agent on BNB Chain"
     )
-    CHAIN_ID: int = int(os.environ.get("CHAIN_ID") or os.environ.get("VITE_CHAIN_ID") or "56")
+    AGENT_ENDPOINT_URL: str = os.environ.get(
+        "AGENT_ENDPOINT_URL", "http://localhost:8003/erc8183/status"
+    )
 
     # Server
     HOST: str = os.environ.get("HOST", "127.0.0.1")
@@ -29,3 +33,9 @@ class Config:
     @property
     def groq_configured(self) -> bool:
         return bool(self.GROQ_API_KEY)
+
+    @property
+    def bnb_configured(self) -> bool:
+        # A wallet password is required to open/create the keystore; the private
+        # key is only needed on the very first run (then it's encrypted on disk).
+        return bool(self.WALLET_PASSWORD)

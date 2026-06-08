@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { BrutalCard, StickerTag } from "@/components/brutal";
-import { useApp } from "@/lib/store";
+import { useApp, decisionCounts, type LoggedDecision } from "@/lib/store";
 import { WalletButton } from "@/components/wallet-button";
 import { useAccount, useBalance } from "wagmi";
 import { appChain } from "@/lib/wagmi";
 import { formatUnits } from "viem";
 import { useQuery } from "@tanstack/react-query";
-import { Play, Square, Power, Zap, LineChart, PieChart, Wallet } from "lucide-react";
+import { Play, Square, Power, Zap, PieChart, Wallet, Trash2, Bot } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/dashboard/")({
@@ -14,7 +14,11 @@ export const Route = createFileRoute("/dashboard/")({
 });
 
 function Overview() {
-  const { running, setRunning, autonomous, setAutonomous, killSwitch, setKill, guardrails } = useApp();
+  const {
+    running, setRunning, autonomous, setAutonomous, killSwitch, setKill, guardrails,
+    autoExecute, setAutoExecute, decisions, clearDecisions,
+  } = useApp();
+  const counts = decisionCounts(decisions);
   const { address, isConnected } = useAccount();
   const { data: bal } = useBalance({ address, chainId: appChain.id, query: { enabled: isConnected } });
   const bnb = bal ? Number(formatUnits(bal.value, bal.decimals)) : null;
@@ -65,12 +69,36 @@ function Overview() {
 
       <div className="grid lg:grid-cols-3 gap-5">
         <BrutalCard className="lg:col-span-2 p-5">
-          <div className="font-display uppercase">Portfolio history</div>
-          <EmptyState
-            icon={LineChart}
-            title="No history recorded yet"
-            body="Portfolio value over time is built from on-chain balance snapshots. Snapshot recording isn't enabled (no datastore), so there's nothing to chart — by design, no placeholder numbers."
-          />
+          <div className="flex items-center justify-between">
+            <div className="font-display uppercase">Live decision feed</div>
+            {decisions.length > 0 && (
+              <button
+                onClick={() => { clearDecisions(); toast("Decision log cleared"); }}
+                className="inline-flex items-center gap-1 border-2 border-ink bg-card px-2 py-1 font-display text-[10px] uppercase shadow-brutal-sm hover:bg-pink transition-colors"
+              >
+                <Trash2 className="size-3" /> Clear
+              </button>
+            )}
+          </div>
+          {decisions.length === 0 ? (
+            <EmptyState
+              icon={Bot}
+              title={running && !killSwitch ? "Waiting for first decision…" : "Agent is stopped"}
+              body={
+                killSwitch
+                  ? "Kill switch is engaged. Release it to let the agent decide."
+                  : running
+                    ? "The autonomous agent runs a decision cycle on a timer. The first one appears within a few seconds."
+                    : "Press START (below) and enable Autonomous Mode to let the agent decide on its own."
+              }
+            />
+          ) : (
+            <div className="mt-4 space-y-2 max-h-[420px] overflow-y-auto pr-1">
+              {decisions.map((d) => (
+                <DecisionRow key={d.id} d={d} />
+              ))}
+            </div>
+          )}
         </BrutalCard>
 
         <BrutalCard className="p-5">
@@ -104,6 +132,11 @@ function Overview() {
                 className="size-5 accent-pink" />
               Autonomous Mode
             </label>
+            <label className="flex items-center gap-2 text-paper font-display text-sm uppercase">
+              <input type="checkbox" checked={autoExecute} onChange={(e) => setAutoExecute(e.target.checked)}
+                className="size-5 accent-lime" />
+              Auto-execute
+            </label>
             <button onClick={() => { setRunning(true); toast.success("Agent started"); }}
               disabled={killSwitch}
               className="inline-flex items-center gap-2 border-2 border-paper bg-lime text-ink px-3 py-2 font-display text-xs uppercase shadow-[5px_5px_0_0_#f5f1e0] disabled:opacity-40">
@@ -120,12 +153,15 @@ function Overview() {
           </div>
         </div>
         <div className="mt-4 grid sm:grid-cols-3 gap-3 text-paper">
-          <Mini label="Decisions today" value="—" />
-          <Mini label="Trades today" value="—" />
-          <Mini label="Rejected" value="—" />
+          <Mini label="Decisions today" value={String(counts.decisions)} />
+          <Mini label="Trades today" value={String(counts.trades)} />
+          <Mini label="Rejected" value={String(counts.rejected)} />
         </div>
         <div className="mt-2 text-[11px] font-mono text-paper/50">
-          Counters are blank until decision/trade logging is persisted — no fabricated activity.
+          {autoExecute
+            ? "Auto-execute ON — approved non-hold decisions are sent to Trust Wallet automatically."
+            : "Auto-execute OFF — the agent decides and logs, but never sends a trade."}{" "}
+          Counts reset daily. Persisted locally — no fabricated activity.
         </div>
       </BrutalCard>
     </div>
@@ -168,6 +204,51 @@ function Mini({ label, value }: { label: string; value: string }) {
     <div className="border-2 border-paper p-3">
       <div className="font-display text-[10px] uppercase text-paper/60 flex items-center gap-1"><Zap className="size-3" /> {label}</div>
       <div className="font-display text-xl mt-1">{value}</div>
+    </div>
+  );
+}
+
+function DecisionRow({ d }: { d: LoggedDecision }) {
+  // Status: AI error > rejected > executed > approved (no-exec) > hold.
+  const status = d.error
+    ? { label: "AI ERROR", cls: "bg-orange text-ink" }
+    : !d.approved
+      ? { label: "REJECTED", cls: "bg-destructive text-destructive-foreground" }
+      : d.execution?.ok
+        ? { label: "EXECUTED", cls: "bg-lime text-ink" }
+        : d.execution?.attempted
+          ? { label: "EXEC FAILED", cls: "bg-orange text-ink" }
+          : d.action === "hold"
+            ? { label: "HOLD", cls: "bg-card text-ink" }
+            : { label: "APPROVED", cls: "bg-lime text-ink" };
+  const time = new Date(d.at).toLocaleTimeString();
+
+  return (
+    <div className="border-2 border-ink bg-paper p-3">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2 font-display text-xs uppercase">
+          <span className={`border-2 border-ink px-1.5 py-0.5 ${d.action === "hold" ? "bg-card" : d.action === "buy" ? "bg-lime" : "bg-pink"}`}>
+            {d.action} {d.action !== "hold" ? `${d.tokenIn}→${d.tokenOut}` : ""}
+          </span>
+          <span className="font-mono text-[10px] text-ink/50">{d.source}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`border-2 border-ink px-1.5 py-0.5 font-display text-[10px] uppercase ${status.cls}`}>{status.label}</span>
+          <span className="font-mono text-[10px] text-ink/50">{time}</span>
+        </div>
+      </div>
+      <div className="mt-1 font-mono text-[11px] text-ink/70">
+        {d.action !== "hold" && <span>size {d.sizePercent}% · conf {d.confidence.toFixed(2)} · </span>}
+        {d.reasoning}
+      </div>
+      {(d.error || d.reason || d.execution?.error || d.execution?.txHash) && (
+        <div className="mt-1 font-mono text-[10px]">
+          {d.error && <span className="text-orange">ai: {d.error} </span>}
+          {!d.error && d.reason && <span className="text-pink">guardrail: {d.reason} </span>}
+          {d.execution?.error && <span className="text-orange">exec: {d.execution.error} </span>}
+          {d.execution?.txHash && <span className="text-ink/60">tx: {String(d.execution.txHash).slice(0, 14)}…</span>}
+        </div>
+      )}
     </div>
   );
 }

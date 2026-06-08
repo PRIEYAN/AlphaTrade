@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { BrutalCard, StickerTag } from "@/components/brutal";
 import { useState } from "react";
-import { useApp } from "@/lib/store";
+import { useApp, makeDecisionId } from "@/lib/store";
 import { fetchSignals } from "@/lib/services/cmcService";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount, useBalance } from "wagmi";
@@ -21,8 +21,7 @@ type DecisionResp = {
 };
 
 function StrategyPage() {
-  const { guardrails, killSwitch } = useApp();
-  const [strategy, setStrategy] = useState("Rotate up to 5% from USDT into BNB when Fear & Greed is above 60 and funding stays positive. Hold otherwise.");
+  const { guardrails, killSwitch, strategy, setStrategy, addDecision } = useApp();
   const [sources, setSources] = useState({ fg: true, funding: true, sentiment: true, momentum: false });
   const [loading, setLoading] = useState(false);
   const [executing, setExecuting] = useState(false);
@@ -77,6 +76,22 @@ function StrategyPage() {
       }
       const data: DecisionResp = await res.json();
       setResult(data);
+      // Log this manual run into the shared feed so it shows on the Overview and
+      // counts toward today's totals — same store the autonomous loop writes to.
+      addDecision({
+        id: makeDecisionId(),
+        at: Date.now(),
+        source: "manual",
+        action: data.decision.action,
+        tokenIn: data.decision.tokenIn,
+        tokenOut: data.decision.tokenOut,
+        sizePercent: data.decision.sizePercent,
+        confidence: data.decision.confidence,
+        reasoning: data.decision.reasoning,
+        approved: Boolean(data.validation.approved) && !data.error,
+        reason: data.validation.reason,
+        error: data.error ?? null,
+      });
       if (data.error) {
         toast.error(data.error);
       } else {

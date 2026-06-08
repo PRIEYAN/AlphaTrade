@@ -2,6 +2,7 @@ import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-rout
 import { LayoutDashboard, Shield, Sparkles, Activity, Power, ArrowLeft } from "lucide-react";
 import { useAccount } from "wagmi";
 import { useApp } from "@/lib/store";
+import { useAgentLoop } from "@/lib/agent/useAgentLoop";
 import { WalletButton } from "@/components/wallet-button";
 import { config } from "@/lib/config";
 import { cn } from "@/lib/utils";
@@ -23,6 +24,10 @@ function DashboardLayout() {
   const { killSwitch, setKill } = useApp();
   const { isConnected } = useAccount();
   const loc = useLocation();
+
+  // Drives the autonomous agent: while running, it decides + (optionally) trades
+  // on a timer. Mounted here so it keeps running across every dashboard tab.
+  useAgentLoop();
 
   return (
     <div className="min-h-screen bg-paper grid-bg">

@@ -3,6 +3,16 @@ from flask import Blueprint, current_app, jsonify, request
 bp = Blueprint("bnb", __name__)
 
 
+@bp.get("/api/bnb/context")
+def context():
+    """Return live BNB Smart Chain block/gas context from the configured RPC."""
+    controller = current_app.extensions["bnb_controller"]
+    try:
+        return jsonify({"ok": True, **controller.get_on_chain_context()})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 502
+
+
 @bp.post("/api/bnb/register")
 def register():
     """Register this agent on-chain (ERC-8004) via the bnbagent SDK.

@@ -3,7 +3,6 @@ import { BrutalCard, StickerTag } from "@/components/brutal";
 import { mockTrades, mockDecisions, mockX402Payments } from "@/lib/mock/mockData";
 import { config } from "@/lib/config";
 import { ExternalLink, Trophy } from "lucide-react";
-import { twakService } from "@/lib/services/twakService";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -13,10 +12,28 @@ export const Route = createFileRoute("/dashboard/activity")({
 
 function ActivityPage() {
   const [registered, setRegistered] = useState(false);
+  const [registering, setRegistering] = useState(false);
   const register = async () => {
-    const r = await twakService.registerForCompetition();
-    setRegistered(r.registered);
-    toast.success("Agent registered for competition");
+    setRegistering(true);
+    try {
+      // Signing is server-side — the browser never sees TWAK credentials.
+      const res = await fetch("/api/twak/register", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Registration failed");
+        return;
+      }
+      setRegistered(Boolean(data.registered));
+      if (data.simulated) {
+        toast.message("Registered (simulated — TWAK not configured)");
+      } else {
+        toast.success("Agent registered for competition");
+      }
+    } catch {
+      toast.error("Registration request failed");
+    } finally {
+      setRegistering(false);
+    }
   };
 
   return (
@@ -37,9 +54,9 @@ function ActivityPage() {
           </div>
           <div className="text-paper/70 text-sm font-mono">Status: {registered ? "REGISTERED ✓" : "Not registered"}</div>
         </div>
-        <button onClick={register} disabled={registered}
+        <button onClick={register} disabled={registered || registering}
           className="inline-flex items-center gap-2 border-2 border-paper bg-lime text-ink px-4 py-2 font-display uppercase shadow-[5px_5px_0_0_#f5f1e0] disabled:opacity-50">
-          <Trophy className="size-4" /> {registered ? "Registered" : "Register Agent"}
+          <Trophy className="size-4" /> {registered ? "Registered" : registering ? "Registering…" : "Register Agent"}
         </button>
       </BrutalCard>
 

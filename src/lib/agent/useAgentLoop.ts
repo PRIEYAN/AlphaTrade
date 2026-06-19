@@ -2,36 +2,34 @@ import { useEffect, useRef } from "react";
 import { useAccount, useBalance, useChainId } from "wagmi";
 import { formatUnits } from "viem";
 import { appChain } from "@/lib/wagmi";
-import { useApp, isToday, makeDecisionId, type LoggedDecision } from "@/lib/store";
+import { useApp, isToday, makeTradeId, type TradeRecord, type MarketSnapshot } from "@/lib/store";
 import { fetchSignals } from "@/lib/services/cmcService";
 import { toast } from "sonner";
 
 // =============================================================================
 // Autonomous agent loop.
 //
-// This is what makes "RUNNING" actually run. While running && autonomous &&
-// !killSwitch, it fires a decision cycle every `tickIntervalMs`:
-//   1. pull live signals (Fear & Greed) + on-chain context (block/gas),
-//   2. ask the Groq decision engine (/api/agent/decide) for a decision,
-//   3. log it (fills the Overview counters + decision feed),
-//   4. if approved + non-hold + autoExecute, send the swap via Trust Wallet
-//      Agent Kit (server-side signing) and record the real result.
+// While running && autonomous && !killSwitch, fires a decision cycle every
+// `tickIntervalMs`:
+//   1. Pull live signals (Fear & Greed) + Binance price + on-chain context.
+//   2. Ask the Python Agent (/api/agent/decide) for a decision + explanation.
+//   3. Route to paper log, TWAK testnet/mainnet, or just log (analysis mode).
+//   4. Save the full TradeRecord to the store for the audit trail.
 //
-// Mount this ONCE, high in the dashboard tree (DashboardLayout), so it runs no
-// matter which tab is open. Every guardrail is enforced server-side too; this
-// loop just drives the clock.
+// All guardrail logic lives in the Python Agent — the loop only drives the
+// clock and persists the result.
 // =============================================================================
 
 export function useAgentLoop() {
   const running = useApp((s) => s.running);
   const autonomous = useApp((s) => s.autonomous);
   const killSwitch = useApp((s) => s.killSwitch);
-  const autoExecute = useApp((s) => s.autoExecute);
+  const mode = useApp((s) => s.mode);
   const tickIntervalMs = useApp((s) => s.tickIntervalMs);
   const strategy = useApp((s) => s.strategy);
   const guardrails = useApp((s) => s.guardrails);
-  const decisions = useApp((s) => s.decisions);
-  const addDecision = useApp((s) => s.addDecision);
+  const trades = useApp((s) => s.trades);
+  const addTrade = useApp((s) => s.addTrade);
 
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
@@ -41,13 +39,10 @@ export function useAgentLoop() {
     query: { enabled: isConnected },
   });
 
-  // Load persisted state on the client only (store uses skipHydration).
   useEffect(() => {
     void useApp.persist.rehydrate();
   }, []);
 
-  // Re-created every render so it always closes over the latest state; the
-  // interval invokes `tickRef.current`, so it never runs a stale snapshot.
   const busy = useRef(false);
   const tickRef = useRef<() => Promise<void>>(async () => {});
 
@@ -56,18 +51,27 @@ export function useAgentLoop() {
     if (!running || !autonomous || killSwitch) return;
     busy.current = true;
     try {
-      const today = decisions.filter((d) => isToday(d.at));
-      const tradesToday = today.filter((d) => d.execution?.ok).length;
+      const today = trades.filter((t) => isToday(t.at));
+      const tradesToday = today.filter((t) => t.status === "executed" || t.status === "simulated").length;
 
-      // 1. live signals + on-chain context (best-effort; nulls are fine).
-      const [signals, onchain] = await Promise.all([
+      // 1. Fetch all live context in parallel.
+      const [signals, onchain, market] = await Promise.all([
         fetchSignals().catch(() => null),
-        fetch("/api/bnb/context")
-          .then((r) => r.json())
-          .catch(() => null),
+        fetch("/api/bnb/context").then((r) => r.json()).catch(() => null),
+        fetch("/api/market?symbol=BNBUSDT").then((r) => r.json()).catch(() => null),
       ]);
 
-      // 2. ask the decision engine.
+      const marketSnapshot: MarketSnapshot = {
+        fearGreed: signals?.fearGreed ?? null,
+        price: market?.price ?? null,
+        priceChange24h: market?.priceChange24h ?? null,
+        volume24h: market?.volume24hUsdt ?? null,
+        orderbookImbalance: market?.orderbookImbalance ?? null,
+        blockNumber: onchain?.ok ? onchain.blockNumber : null,
+        gasPriceGwei: onchain?.ok ? onchain.gasPriceGwei : null,
+      };
+
+      // 2. Ask the Python Agent for a decision.
       const res = await fetch("/api/agent/decide", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -78,6 +82,8 @@ export function useAgentLoop() {
             funding: signals?.funding ?? undefined,
             sentiment: signals?.sentiment ?? undefined,
             onchain: onchain?.ok ? onchain : undefined,
+            binance: market?.price ? market : undefined,
+            mode,
           },
           guardrails: {
             ...guardrails,
@@ -89,27 +95,48 @@ export function useAgentLoop() {
           },
         }),
       });
-      if (!res.ok) return;
+
+      if (!res.ok && res.status !== 503) return;
       const data = await res.json();
       const d = data.decision;
       const approved = Boolean(data.validation?.approved) && !data.error;
 
-      // 3. optional auto-execution of an approved, non-hold trade.
-      let execution: LoggedDecision["execution"];
-      if (approved && d.action !== "hold" && autoExecute) {
-        if (!isConnected || chainId !== appChain.id) {
-          execution = { attempted: false, ok: false, error: "wallet not connected / wrong chain" };
-        } else if (tradesToday >= guardrails.dailyTradeCap) {
-          execution = { attempted: false, ok: false, error: "daily trade cap reached" };
-        } else {
-          execution = await executeSwap(d);
+      // 3. Execute according to mode.
+      let status: TradeRecord["status"] = "analysis";
+      let txHash: string | null = null;
+      let entryPrice: number | null = null;
+
+      if (approved && d.action !== "hold") {
+        if (mode === "paper") {
+          status = "simulated";
+          entryPrice = marketSnapshot.price ?? null;
+        } else if (mode === "testnet" || mode === "mainnet") {
+          const execResult = await executeSwap(d, bal, guardrails.slippagePct, isConnected, chainId);
+          status = execResult.ok ? "executed" : "simulated";
+          txHash = execResult.txHash ?? null;
+          entryPrice = execResult.ok ? (marketSnapshot.price ?? null) : null;
+          if (execResult.ok) {
+            toast.success(`Trade executed: ${d.action} ${d.tokenOut}`);
+          } else if (execResult.error) {
+            toast.error(`Exec failed: ${execResult.error}`);
+            status = "simulated"; // fall back to paper
+            entryPrice = marketSnapshot.price ?? null;
+          }
         }
+        // analysis mode: status stays "analysis"
+      } else if (!approved) {
+        status = "rejected";
       }
 
-      addDecision({
-        id: makeDecisionId(),
+      // Build per-check risk summary for the drawer.
+      const riskChecks = buildRiskChecks(data.validation);
+
+      addTrade({
+        id: makeTradeId(),
         at: Date.now(),
         source: "auto",
+        mode,
+        marketSnapshot,
         action: d.action,
         tokenIn: d.tokenIn,
         tokenOut: d.tokenOut,
@@ -117,16 +144,14 @@ export function useAgentLoop() {
         confidence: d.confidence,
         reasoning: d.reasoning,
         approved,
-        reason: data.validation?.reason,
-        error: data.error ?? null,
-        execution,
+        riskReason: data.validation?.reason,
+        riskChecks,
+        status,
+        entryPrice,
+        txHash,
+        explanation: data.explanation ?? null,
+        aiError: data.error ?? null,
       });
-
-      if (execution?.ok) {
-        toast.success(`Auto-trade executed: ${d.action} ${d.tokenOut}`);
-      } else if (execution?.attempted) {
-        toast.error(`Auto-trade failed: ${execution.error}`);
-      }
     } catch {
       // Never let a single bad tick kill the loop.
     } finally {
@@ -134,50 +159,66 @@ export function useAgentLoop() {
     }
   };
 
-  // Route an approved decision through Trust Wallet Agent Kit (server signs).
-  const executeSwap = async (d: {
-    tokenIn: string;
-    tokenOut: string;
-    sizePercent: number;
-  }): Promise<LoggedDecision["execution"]> => {
-    // Auto-size only when selling native BNB from the connected wallet;
-    // otherwise send 0 and let the configured TWAK layer resolve the amount.
-    let amount = "0";
-    if (d.tokenIn.toUpperCase() === "BNB" && bal) {
-      amount = ((Number(formatUnits(bal.value, bal.decimals)) * d.sizePercent) / 100).toFixed(6);
-    }
-    try {
-      const res = await fetch("/api/twak/swap", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          tokenIn: d.tokenIn,
-          tokenOut: d.tokenOut,
-          amount,
-          slippage: guardrails.slippagePct,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) return { attempted: true, ok: false, error: data.error ?? "swap failed" };
-      return { attempted: true, ok: true, txHash: data.txHash };
-    } catch (e) {
-      return { attempted: true, ok: false, error: e instanceof Error ? e.message : "swap request failed" };
-    }
-  };
-
-  // The recurring clock. Recreated only when the cadence changes.
   useEffect(() => {
     const ms = Math.max(5_000, tickIntervalMs || 30_000);
     const id = setInterval(() => void tickRef.current?.(), ms);
     return () => clearInterval(id);
   }, [tickIntervalMs]);
 
-  // Fire one cycle shortly after the agent is (re)started, so the demo reacts
-  // quickly instead of waiting a full interval.
   useEffect(() => {
     if (running && autonomous && !killSwitch) {
       const t = setTimeout(() => void tickRef.current?.(), 2_000);
       return () => clearTimeout(t);
     }
   }, [running, autonomous, killSwitch]);
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+async function executeSwap(
+  d: { tokenIn: string; tokenOut: string; sizePercent: number },
+  bal: { value: bigint; decimals: number } | undefined,
+  slippagePct: number,
+  isConnected: boolean,
+  chainId: number,
+): Promise<{ ok: boolean; txHash?: string; error?: string }> {
+  if (!isConnected || chainId !== appChain.id) {
+    return { ok: false, error: "wallet not connected / wrong chain" };
+  }
+  let amount = "0";
+  if (d.tokenIn.toUpperCase() === "BNB" && bal) {
+    amount = ((Number(formatUnits(bal.value, bal.decimals)) * d.sizePercent) / 100).toFixed(6);
+  }
+  try {
+    const res = await fetch("/api/twak/swap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tokenIn: d.tokenIn, tokenOut: d.tokenOut, amount, slippage: slippagePct }),
+    });
+    const data = await res.json();
+    if (!res.ok) return { ok: false, error: data.error ?? "swap failed" };
+    return { ok: true, txHash: data.txHash };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "swap request failed" };
+  }
+}
+
+function buildRiskChecks(validation: { approved?: boolean; reasons?: string[] } | null | undefined) {
+  if (!validation) return undefined;
+  if (!validation.reasons || validation.reasons.length === 0) {
+    return { overall: "PASS" as const };
+  }
+  const checks: Record<string, "PASS" | "FAIL"> = { overall: "FAIL" };
+  for (const r of validation.reasons) {
+    if (r.includes("kill switch")) checks.kill_switch = "FAIL";
+    else if (r.includes("confidence")) checks.confidence = "FAIL";
+    else if (r.includes("size") || r.includes("per-trade")) checks.trade_size = "FAIL";
+    else if (r.includes("daily trade cap")) checks.daily_trade_count = "FAIL";
+    else if (r.includes("slippage")) checks.slippage = "FAIL";
+    else if (r.includes("allowlist")) checks.token_allowlist = "FAIL";
+    else if (r.includes("drawdown")) checks.drawdown = "FAIL";
+    else if (r.includes("spend")) checks.daily_spend = "FAIL";
+    else checks.other = "FAIL";
+  }
+  return checks;
 }

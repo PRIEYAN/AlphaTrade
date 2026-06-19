@@ -2,11 +2,8 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { allowedTokens } from "@/lib/tokens";
 
-// Client store for agent controls (kill switch, autonomous/running), guardrails,
-// the active strategy, and the autonomous-loop decision log. Persisted to
-// localStorage so the agent state + decision history survive a page refresh.
-// Wallet state is NOT here — it comes from wagmi (useAccount/useBalance) so it's
-// always the real connected wallet, never a stored mock.
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 type Guardrails = {
   maxPerTradePct: number;
   dailyTradeCap: number;
@@ -17,62 +14,94 @@ type Guardrails = {
   allowlist: string[];
 };
 
+/** Operating mode — determines what happens after an approved decision. */
+export type TradingMode = "analysis" | "paper" | "testnet" | "mainnet";
+
 export type DecisionAction = "buy" | "sell" | "hold";
 
-/** One decision produced by the agent (auto loop) or a manual Run Analysis. */
-export type LoggedDecision = {
+/** Snapshot of market conditions captured at decision time. */
+export type MarketSnapshot = {
+  fearGreed?: { value: number; label: string } | null;
+  price?: number | null;
+  priceChange24h?: number | null;
+  volume24h?: number | null;
+  orderbookImbalance?: number | null;
+  blockNumber?: number | null;
+  gasPriceGwei?: number | null;
+};
+
+/** Per-check result from the deterministic risk engine. */
+export type RiskChecks = Record<string, "PASS" | "FAIL">;
+
+/** Full audit record for one agent cycle (manual or autonomous). */
+export type TradeRecord = {
   id: string;
   at: number; // epoch ms
   source: "auto" | "manual";
+  mode: TradingMode;
+
+  // Market context at decision time
+  marketSnapshot: MarketSnapshot;
+
+  // AI decision
   action: DecisionAction;
   tokenIn: string;
   tokenOut: string;
   sizePercent: number;
   confidence: number;
   reasoning: string;
+
+  // Risk engine output
   approved: boolean;
-  reason?: string; // guardrail rejection reason
-  error?: string | null; // upstream AI error (key/upstream/schema)
-  execution?: {
-    attempted: boolean;
-    ok: boolean;
-    txHash?: string;
-    error?: string;
-  };
+  riskReason?: string;
+  riskChecks?: RiskChecks;
+
+  // Execution result
+  status: "executed" | "simulated" | "rejected" | "analysis";
+  entryPrice?: number | null;   // paper/live entry price
+  txHash?: string | null;
+
+  // SLM explanation (generated post-decision)
+  explanation?: string | null;
+
+  // Error from AI layer (not a guardrail rejection)
+  aiError?: string | null;
 };
+
+// ─── Store ────────────────────────────────────────────────────────────────────
 
 type Store = {
   killSwitch: boolean;
   setKill: (v: boolean) => void;
+
+  mode: TradingMode;
+  setMode: (m: TradingMode) => void;
+
   autonomous: boolean;
   setAutonomous: (v: boolean) => void;
   running: boolean;
   setRunning: (v: boolean) => void;
-  // When true, the autonomous loop auto-executes approved (non-hold) trades via
-  // Trust Wallet Agent Kit. When false, the loop only decides and logs.
-  autoExecute: boolean;
-  setAutoExecute: (v: boolean) => void;
-  // How often the autonomous loop runs a decision cycle (ms).
+
   tickIntervalMs: number;
   setTickIntervalMs: (v: number) => void;
-  // The active natural-language strategy, shared by the loop and Strategy page.
+
   strategy: string;
   setStrategy: (v: string) => void;
+
   guardrails: Guardrails;
   setGuardrails: (g: Partial<Guardrails>) => void;
-  // Decision log (newest first), capped to the most recent entries.
-  decisions: LoggedDecision[];
-  addDecision: (d: LoggedDecision) => void;
-  clearDecisions: () => void;
+
+  // Full trade audit trail (newest first, capped at MAX_LOG)
+  trades: TradeRecord[];
+  addTrade: (t: TradeRecord) => void;
+  clearTrades: () => void;
 };
 
 const DEFAULT_STRATEGY =
   "Rotate up to 5% from USDT into BNB when Fear & Greed is above 60 and funding stays positive. Hold otherwise.";
 
-const MAX_LOG = 100;
+const MAX_LOG = 200;
 
-// SSR-safe storage: the server has no localStorage, so fall back to a no-op.
-// Shaped as zustand's StateStorage (getItem/setItem/removeItem), not full DOM Storage.
 const noopStorage = {
   getItem: (_name: string) => null,
   setItem: (_name: string, _value: string) => {},
@@ -84,16 +113,21 @@ export const useApp = create<Store>()(
     (set) => ({
       killSwitch: false,
       setKill: (v) => set({ killSwitch: v }),
+
+      mode: "paper",
+      setMode: (m) => set({ mode: m }),
+
       autonomous: true,
       setAutonomous: (v) => set({ autonomous: v }),
       running: true,
       setRunning: (v) => set({ running: v }),
-      autoExecute: true,
-      setAutoExecute: (v) => set({ autoExecute: v }),
+
       tickIntervalMs: 30_000,
       setTickIntervalMs: (v) => set({ tickIntervalMs: v }),
+
       strategy: DEFAULT_STRATEGY,
       setStrategy: (v) => set({ strategy: v }),
+
       guardrails: {
         maxPerTradePct: 10,
         dailyTradeCap: 20,
@@ -104,40 +138,39 @@ export const useApp = create<Store>()(
         allowlist: allowedTokens.slice(0, 10),
       },
       setGuardrails: (g) => set((s) => ({ guardrails: { ...s.guardrails, ...g } })),
-      decisions: [],
-      addDecision: (d) =>
-        set((s) => ({ decisions: [d, ...s.decisions].slice(0, MAX_LOG) })),
-      clearDecisions: () => set({ decisions: [] }),
+
+      trades: [],
+      addTrade: (t) =>
+        set((s) => ({ trades: [t, ...s.trades].slice(0, MAX_LOG) })),
+      clearTrades: () => set({ trades: [] }),
     }),
     {
-      name: "alphatrade-agent",
+      name: "alphatrade-v2",
       storage: createJSONStorage(() =>
         typeof window !== "undefined" ? window.localStorage : noopStorage,
       ),
-      // Defer hydration to a client effect (see useAgentLoop) so server-rendered
-      // HTML matches the first client render — avoids hydration mismatches.
       skipHydration: true,
       partialize: (s) => ({
         killSwitch: s.killSwitch,
+        mode: s.mode,
         autonomous: s.autonomous,
         running: s.running,
-        autoExecute: s.autoExecute,
         tickIntervalMs: s.tickIntervalMs,
         strategy: s.strategy,
         guardrails: s.guardrails,
-        decisions: s.decisions,
+        trades: s.trades,
       }),
     },
   ),
 );
 
-/** Stable-ish unique id for a logged decision (browser-only, non-crypto use). */
-export function makeDecisionId(): string {
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+export function makeTradeId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
-  return `d_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+  return `t_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
 }
 
-/** True if a timestamp falls on the current calendar day. */
 export function isToday(ts: number): boolean {
   const d = new Date(ts);
   const n = new Date();
@@ -148,12 +181,40 @@ export function isToday(ts: number): boolean {
   );
 }
 
-/** Today's decision/trade/rejection counts derived from the decision log. */
-export function decisionCounts(decisions: LoggedDecision[]) {
-  const today = decisions.filter((d) => isToday(d.at));
+export function tradeCounts(trades: TradeRecord[]) {
+  const today = trades.filter((t) => isToday(t.at));
   return {
-    decisions: today.length,
-    trades: today.filter((d) => d.execution?.ok).length,
-    rejected: today.filter((d) => !d.approved).length,
+    total: today.length,
+    executed: today.filter((t) => t.status === "executed").length,
+    simulated: today.filter((t) => t.status === "simulated").length,
+    rejected: today.filter((t) => t.status === "rejected").length,
+    approved: today.filter((t) => t.approved).length,
   };
 }
+
+export function paperPnl(trades: TradeRecord[], currentPrice: number | null): number | null {
+  if (currentPrice === null) return null;
+  const paperBuys = trades.filter(
+    (t) => t.status === "simulated" && t.action === "buy" && t.entryPrice,
+  );
+  if (paperBuys.length === 0) return null;
+  return paperBuys.reduce((sum, t) => {
+    const entry = t.entryPrice!;
+    const pct = ((currentPrice - entry) / entry) * 100;
+    return sum + pct;
+  }, 0) / paperBuys.length;
+}
+
+export const MODE_LABELS: Record<TradingMode, string> = {
+  analysis: "Analysis Only",
+  paper: "Paper Trading",
+  testnet: "Testnet",
+  mainnet: "Mainnet",
+};
+
+export const MODE_COLORS: Record<TradingMode, string> = {
+  analysis: "bg-card",
+  paper: "bg-cyan",
+  testnet: "bg-lime",
+  mainnet: "bg-pink",
+};

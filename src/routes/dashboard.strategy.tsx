@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { BrutalCard, StickerTag } from "@/components/brutal";
 import { useState } from "react";
-import { useApp, makeDecisionId } from "@/lib/store";
+import { useApp, makeTradeId, MODE_LABELS, type MarketSnapshot } from "@/lib/store";
 import { fetchSignals } from "@/lib/services/cmcService";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount, useBalance } from "wagmi";
@@ -15,17 +15,26 @@ export const Route = createFileRoute("/dashboard/strategy")({
 });
 
 type DecisionResp = {
-  decision: { action: "buy" | "sell" | "hold"; tokenIn: string; tokenOut: string; sizePercent: number; confidence: number; reasoning: string };
-  validation: { approved: boolean; reason?: string };
+  decision: {
+    action: "buy" | "sell" | "hold";
+    tokenIn: string;
+    tokenOut: string;
+    sizePercent: number;
+    confidence: number;
+    reasoning: string;
+  };
+  validation: { approved: boolean; reason?: string; reasons?: string[] };
+  explanation?: string | null;
   error?: string | null;
 };
 
 function StrategyPage() {
-  const { guardrails, killSwitch, strategy, setStrategy, addDecision } = useApp();
+  const { guardrails, killSwitch, strategy, setStrategy, addTrade, mode } = useApp();
   const [sources, setSources] = useState({ fg: true, funding: true, sentiment: true, momentum: false });
   const [loading, setLoading] = useState(false);
   const [executing, setExecuting] = useState(false);
   const [result, setResult] = useState<DecisionResp | null>(null);
+  const [marketSnapshot, setMarketSnapshot] = useState<MarketSnapshot>({});
 
   const { address, isConnected } = useAccount();
   const { data: bal } = useBalance({ address, chainId: appChain.id, query: { enabled: isConnected } });
@@ -36,19 +45,37 @@ function StrategyPage() {
   const funding = signals?.funding ?? null;
   const sentiment = signals?.sentiment ?? null;
 
-  // Live BNB Smart Chain context fed into the Groq decision as a real signal.
   const onchainQ = useQuery({
     queryKey: ["bnb-context"],
     queryFn: async () => {
       const r = await fetch("/api/bnb/context");
       return (await r.json()) as { ok: boolean; blockNumber?: number; gasPriceGwei?: number };
     },
-    refetchInterval: 15000,
+    refetchInterval: 15_000,
+  });
+
+  const marketQ = useQuery({
+    queryKey: ["market"],
+    queryFn: async () => {
+      const r = await fetch("/api/market?symbol=BNBUSDT");
+      return (await r.json()) as { configured: boolean; price?: number; priceChange24h?: number; orderbookImbalance?: number };
+    },
+    refetchInterval: 30_000,
   });
 
   const run = async () => {
     setLoading(true);
     try {
+      const snap: MarketSnapshot = {
+        fearGreed: fg,
+        price: marketQ.data?.price ?? null,
+        priceChange24h: marketQ.data?.priceChange24h ?? null,
+        orderbookImbalance: marketQ.data?.orderbookImbalance ?? null,
+        blockNumber: onchainQ.data?.ok ? onchainQ.data.blockNumber : null,
+        gasPriceGwei: onchainQ.data?.ok ? onchainQ.data.gasPriceGwei : null,
+      };
+      setMarketSnapshot(snap);
+
       const res = await fetch("/api/agent/decide", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -59,44 +86,53 @@ function StrategyPage() {
             funding: sources.funding ? funding ?? undefined : undefined,
             sentiment: sources.sentiment ? sentiment ?? undefined : undefined,
             onchain: onchainQ.data?.ok ? onchainQ.data : undefined,
+            binance: marketQ.data?.price ? marketQ.data : undefined,
+            mode,
           },
           guardrails: {
-            // No persistence yet → real per-day counters are unknown; send 0
-            // rather than fabricated activity. Portfolio value 0 skips the USD
-            // spend cap (it can't be evaluated without a price feed).
-            ...guardrails, killSwitch, tradesToday: 0, spentTodayUsd: 0, drawdownPct: 0,
-            portfolioValueUsd: 0,
+            ...guardrails, killSwitch, tradesToday: 0, spentTodayUsd: 0, drawdownPct: 0, portfolioValueUsd: 0,
           },
         }),
       });
-      if (!res.ok) {
-        const e = await res.json();
-        toast.error(e.error ?? "Decision failed");
-        return;
-      }
+
       const data: DecisionResp = await res.json();
       setResult(data);
-      // Log this manual run into the shared feed so it shows on the Overview and
-      // counts toward today's totals — same store the autonomous loop writes to.
-      addDecision({
-        id: makeDecisionId(),
+
+      const approved = Boolean(data.validation.approved) && !data.error;
+      const status = mode === "analysis"
+        ? "analysis" as const
+        : !approved
+          ? "rejected" as const
+          : mode === "paper"
+            ? "simulated" as const
+            : "simulated" as const; // manual runs never auto-submit to testnet/mainnet
+
+      addTrade({
+        id: makeTradeId(),
         at: Date.now(),
         source: "manual",
+        mode,
+        marketSnapshot: snap,
         action: data.decision.action,
         tokenIn: data.decision.tokenIn,
         tokenOut: data.decision.tokenOut,
         sizePercent: data.decision.sizePercent,
         confidence: data.decision.confidence,
         reasoning: data.decision.reasoning,
-        approved: Boolean(data.validation.approved) && !data.error,
-        reason: data.validation.reason,
-        error: data.error ?? null,
+        approved,
+        riskReason: data.validation.reason,
+        riskChecks: buildChecks(data.validation),
+        status,
+        entryPrice: approved && mode === "paper" ? (marketQ.data?.price ?? null) : null,
+        explanation: data.explanation ?? null,
+        aiError: data.error ?? null,
       });
+
       if (data.error) {
         toast.error(data.error);
       } else {
-        toast[data.validation.approved ? "success" : "error"](
-          data.validation.approved ? "Decision approved" : "Decision rejected",
+        toast[approved ? "success" : "error"](
+          approved ? "Decision approved" : "Decision rejected",
           { description: data.validation.reason },
         );
       }
@@ -105,13 +141,9 @@ function StrategyPage() {
     }
   };
 
-  // Decision → execution: route the approved decision through Trust Wallet
-  // (server-side signing). Honest — surfaces the real result or error.
   const execute = async () => {
     if (!result) return;
     const d = result.decision;
-    // Auto-amount is only derivable when selling native BNB from the connected
-    // wallet; otherwise we send 0 and let the (configured) TWAK layer resolve.
     let amount = "0";
     if (d.tokenIn.toUpperCase() === "BNB" && bal) {
       amount = ((Number(formatUnits(bal.value, bal.decimals)) * d.sizePercent) / 100).toFixed(6);
@@ -124,10 +156,7 @@ function StrategyPage() {
         body: JSON.stringify({ tokenIn: d.tokenIn, tokenOut: d.tokenOut, amount, slippage: guardrails.slippagePct }),
       });
       const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error ?? "Execution failed");
-        return;
-      }
+      if (!res.ok) { toast.error(data.error ?? "Execution failed"); return; }
       toast.success(data.txHash ? `Swap submitted: ${String(data.txHash).slice(0, 12)}…` : "Swap submitted");
     } catch {
       toast.error("Execution request failed");
@@ -141,6 +170,9 @@ function StrategyPage() {
       <div>
         <StickerTag tone="pink">AI engine</StickerTag>
         <h1 className="font-display text-4xl md:text-5xl uppercase mt-2">Strategy + AI</h1>
+        <p className="text-ink/60 font-mono text-xs mt-1">
+          Mode: <span className="font-bold">{MODE_LABELS[mode]}</span> — decisions are logged to the Activity tab
+        </p>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-5">
@@ -154,12 +186,17 @@ function StrategyPage() {
           <div>
             <div className="font-display text-xs uppercase mb-2">Signal sources</div>
             <div className="flex flex-wrap gap-2">
-              {([["fg", "Fear & Greed"], ["funding", "Funding Rates"], ["sentiment", "Sentiment"], ["momentum", "Momentum"]] as const).map(([k, label]) => (
-                <button key={k} type="button" onClick={() => setSources((s) => ({ ...s, [k]: !s[k as keyof typeof s] }))}
-                  className={`border-brutal px-2 py-1 font-display text-xs uppercase shadow-brutal-sm ${sources[k as keyof typeof sources] ? "bg-lime translate-x-[2px] translate-y-[2px] shadow-none" : "bg-paper"}`}>
+              {([["fg", "Fear & Greed"], ["funding", "Funding Rates"], ["sentiment", "Sentiment"]] as const).map(([k, label]) => (
+                <button key={k} type="button" onClick={() => setSources((s) => ({ ...s, [k]: !s[k] }))}
+                  className={`border-brutal px-2 py-1 font-display text-xs uppercase shadow-brutal-sm ${sources[k] ? "bg-lime translate-x-[2px] translate-y-[2px] shadow-none" : "bg-paper"}`}>
                   {label}
                 </button>
               ))}
+              {marketQ.data?.price && (
+                <div className="border-brutal px-2 py-1 font-display text-xs uppercase bg-lime shadow-brutal-sm">
+                  Binance ✓ ${marketQ.data.price.toFixed(2)}
+                </div>
+              )}
             </div>
           </div>
 
@@ -170,26 +207,38 @@ function StrategyPage() {
           </button>
 
           {result && (
-            <div className="mt-2 border-brutal bg-ink text-paper p-4">
+            <div className="mt-2 border-brutal bg-ink text-paper p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-display uppercase">AI Decision</div>
-                <span className={`border-brutal px-2 py-0.5 font-display text-xs uppercase shadow-brutal-sm ${result.error ? "bg-orange text-ink" : result.validation.approved ? "bg-lime text-ink" : "bg-destructive text-destructive-foreground"}`}>
+                <span className={`border-brutal px-2 py-0.5 font-display text-xs uppercase shadow-brutal-sm ${
+                  result.error ? "bg-orange text-ink"
+                  : result.validation.approved ? "bg-lime text-ink"
+                  : "bg-destructive text-destructive-foreground"
+                }`}>
                   {result.error ? "AI ERROR" : result.validation.approved ? "APPROVED" : "REJECTED"}
                 </span>
               </div>
-              <pre className="mt-3 text-xs font-mono whitespace-pre-wrap text-paper">{JSON.stringify(result.decision, null, 2)}</pre>
+              <pre className="text-xs font-mono whitespace-pre-wrap text-paper">{JSON.stringify(result.decision, null, 2)}</pre>
+
               {result.error && (
-                <div className="mt-3 text-sm border-2 border-orange p-2 font-mono text-orange">
+                <div className="text-sm border-2 border-orange p-2 font-mono text-orange">
                   <span className="font-bold">AI error:</span> {result.error}
                 </div>
               )}
               {result.validation.reason && (
-                <div className="mt-3 text-sm border-2 border-paper p-2 font-mono">
+                <div className="text-sm border-2 border-paper p-2 font-mono">
                   <span className="text-pink">guardrail:</span> {result.validation.reason}
                 </div>
               )}
+              {result.explanation && (
+                <div className="border-2 border-paper/40 p-3 text-xs font-mono text-paper/80 italic">
+                  <div className="font-display text-[10px] uppercase text-paper/40 mb-1">AI Explanation</div>
+                  {result.explanation}
+                </div>
+              )}
+
               {!result.error && result.validation.approved && result.decision.action !== "hold" && (
-                <div className="mt-3 flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-3 flex-wrap">
                   <button onClick={execute} disabled={!isConnected || executing}
                     className="inline-flex items-center gap-2 border-2 border-paper bg-lime text-ink px-4 py-2 font-display text-xs uppercase shadow-[5px_5px_0_0_#f5f1e0] disabled:opacity-50">
                     {executing ? <Loader2 className="size-4 animate-spin" /> : <Rocket className="size-4" />}
@@ -205,23 +254,31 @@ function StrategyPage() {
         <BrutalCard className="p-5 space-y-4" tone="cyan">
           <div className="font-display uppercase">Market Signals</div>
           {signalsQ.isLoading ? (
-            <div className="text-xs font-mono text-ink/60 flex items-center gap-2"><Loader2 className="size-3 animate-spin" /> Loading live signals…</div>
+            <div className="text-xs font-mono text-ink/60 flex items-center gap-2"><Loader2 className="size-3 animate-spin" /> Loading…</div>
           ) : !signals?.configured ? (
             <div className="border-2 border-dashed border-ink/40 p-4 text-xs font-mono text-ink/70">
-              Live signals not configured. Set <span className="font-bold">CMC_AGENT_API_KEY</span> on the server to pull real Fear &amp; Greed data. No mock numbers are shown.
+              Live signals not configured. Set <span className="font-bold">CMC_AGENT_API_KEY</span> on the server.
             </div>
           ) : (
             <>
               {fg ? (
                 <Gauge label="Fear & Greed" value={fg.value} sub={fg.label} />
               ) : (
-                <div className="text-xs font-mono text-ink/60">
-                  Fear &amp; Greed unavailable{signals.error ? `: ${signals.error}` : ""}.
+                <div className="text-xs font-mono text-ink/60">Fear &amp; Greed unavailable.</div>
+              )}
+              {marketQ.data?.price && (
+                <div className="border-brutal bg-paper p-3">
+                  <div className="font-display text-xs uppercase mb-1">BNB / USDT (Binance)</div>
+                  <div className="font-display text-2xl">${marketQ.data.price.toFixed(2)}</div>
+                  <div className="font-mono text-[11px] text-ink/60 mt-1">
+                    {marketQ.data.priceChange24h != null && `${marketQ.data.priceChange24h >= 0 ? "+" : ""}${marketQ.data.priceChange24h.toFixed(2)}% 24h`}
+                    {marketQ.data.orderbookImbalance != null && ` · OB ${marketQ.data.orderbookImbalance.toFixed(2)}`}
+                  </div>
                 </div>
               )}
               <div>
                 <div className="font-display text-xs uppercase mb-1">Funding rates</div>
-                {funding && funding.length ? (
+                {funding?.length ? (
                   <table className="w-full text-xs font-mono">
                     <tbody>
                       {funding.map((r) => (
@@ -238,7 +295,7 @@ function StrategyPage() {
               </div>
               <div>
                 <div className="font-display text-xs uppercase mb-1">Sentiment</div>
-                {sentiment && sentiment.length ? (
+                {sentiment?.length ? (
                   <ul className="text-xs font-mono space-y-1">
                     {sentiment.map((s) => (
                       <li key={s.symbol} className="flex justify-between"><span>{s.symbol}</span><span>{s.score.toFixed(2)}</span></li>
@@ -267,4 +324,21 @@ function Gauge({ label, value, sub }: { label: string; value: number; sub: strin
       <div className="mt-1 font-display text-2xl">{value}</div>
     </div>
   );
+}
+
+function buildChecks(validation: { approved?: boolean; reasons?: string[] }): Record<string, "PASS" | "FAIL"> {
+  if (!validation.reasons?.length) return { overall: "PASS" };
+  const c: Record<string, "PASS" | "FAIL"> = { overall: "FAIL" };
+  for (const r of validation.reasons) {
+    if (r.includes("confidence")) c.confidence = "FAIL";
+    else if (r.includes("size") || r.includes("per-trade")) c.trade_size = "FAIL";
+    else if (r.includes("daily trade cap")) c.daily_count = "FAIL";
+    else if (r.includes("slippage")) c.slippage = "FAIL";
+    else if (r.includes("allowlist")) c.allowlist = "FAIL";
+    else if (r.includes("drawdown")) c.drawdown = "FAIL";
+    else if (r.includes("spend")) c.daily_spend = "FAIL";
+    else if (r.includes("kill")) c.kill_switch = "FAIL";
+    else c.other = "FAIL";
+  }
+  return c;
 }

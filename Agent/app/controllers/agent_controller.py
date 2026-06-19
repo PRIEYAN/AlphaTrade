@@ -1,11 +1,14 @@
 """Agent decision pipeline:
 
-  signals (caller-provided: CMC + optional on-chain context)
+  signals (caller-provided: CMC + Binance + optional on-chain context)
     -> Groq proposes ONE action as JSON        (advisory)
     -> schema validation                        (pydantic)
     -> deterministic guardrails                 (pure code)
+    -> SLM explanation engine                   (cosmetic, post-decision)
 
 Raw model output can never, by itself, be marked approved.
+The explanation is generated AFTER the approval decision and has zero
+influence on whether a trade is executed.
 """
 from __future__ import annotations
 
@@ -19,11 +22,13 @@ from ..models.prompts import SYSTEM_PROMPT
 from ..models.sanitizer import sanitize_strategy
 from ..models.schemas import Decision, DecideRequest
 from ..services.groq_service import GroqService
+from ..services.explanation_service import ExplanationService
 
 
 class AgentController:
-    def __init__(self, groq: GroqService) -> None:
+    def __init__(self, groq: GroqService, explainer: ExplanationService) -> None:
         self.groq = groq
+        self.explainer = explainer
 
     def decide(self, req: DecideRequest) -> dict[str, Any]:
         g = req.guardrails
@@ -42,6 +47,7 @@ class AgentController:
                 },
                 "raw": None,
                 "error": None,
+                "explanation": "Kill switch was engaged — no trade was evaluated.",
             }
 
         strategy = sanitize_strategy(req.strategy)
@@ -51,7 +57,6 @@ class AgentController:
         error: str | None = None
 
         if not self.groq.configured:
-            # Deterministic, clearly-labelled demo when no key is configured.
             decision = Decision(
                 action="buy",
                 tokenIn="USDT",
@@ -80,7 +85,7 @@ class AgentController:
             except (json.JSONDecodeError, ValidationError):
                 decision = safe_hold_fallback("Schema validation failed.")
                 error = "The AI returned malformed output — held as a precaution."
-            except Exception as exc:  # auth / upstream failure
+            except Exception as exc:
                 decision = safe_hold_fallback("Upstream AI error — defaulting to hold.")
                 status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
                 error = (
@@ -90,4 +95,25 @@ class AgentController:
                 )
 
         validation = validate_decision(decision, g)
-        return {"decision": decision.model_dump(), "validation": validation, "raw": raw, "error": error}
+
+        # SLM explanation — generated AFTER the decision is finalised.
+        # Uses the market signals provided by the caller as the "market snapshot".
+        market_snapshot = {k: v for k, v in signals.items() if k in ("fearGreed", "price", "binance", "onchain")}
+        execution_context = {
+            "mode": req.signals.get("mode", "paper"),
+            "approved": validation.get("approved", False),
+        }
+        explanation = self.explainer.generate(
+            market_snapshot=market_snapshot,
+            decision=decision.model_dump(),
+            risk_result=validation,
+            execution=execution_context,
+        )
+
+        return {
+            "decision": decision.model_dump(),
+            "validation": validation,
+            "raw": raw,
+            "error": error,
+            "explanation": explanation,
+        }

@@ -16,10 +16,12 @@ from .config import Config
 from .controllers.agent_controller import AgentController
 from .controllers.bnb_controller import BnbController
 from .services.bnb_service import BnbAgentService
+from .services.explanation_service import ExplanationService
 from .services.groq_service import GroqService
 from .views.agent import bp as agent_bp
 from .views.bnb import bp as bnb_bp
 from .views.health import bp as health_bp
+from .views.market import bp as market_bp
 
 
 def create_app() -> Flask:
@@ -38,6 +40,10 @@ def create_app() -> Flask:
 
     # Wire services + controllers once, attach to the app (dependency container).
     groq = GroqService(cfg.GROQ_API_KEY, cfg.GROQ_MODEL)
+    explainer = ExplanationService(
+        groq_client=groq._client,
+        model="llama-3.1-8b-instant",
+    )
     bnb = BnbAgentService(
         cfg.BNB_NETWORK,
         cfg.WALLET_PASSWORD,
@@ -46,12 +52,13 @@ def create_app() -> Flask:
         cfg.BNB_AGENT_RPC,
     )
     app.extensions["agent_config"] = cfg
-    app.extensions["agent_controller"] = AgentController(groq)
+    app.extensions["agent_controller"] = AgentController(groq, explainer)
     app.extensions["bnb_controller"] = BnbController(bnb)
 
     app.register_blueprint(health_bp)
     app.register_blueprint(agent_bp)
     app.register_blueprint(bnb_bp)
+    app.register_blueprint(market_bp)
 
     @app.errorhandler(404)
     def _not_found(_e):

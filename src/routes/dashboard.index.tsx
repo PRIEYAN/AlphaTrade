@@ -1,12 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { BrutalCard, StickerTag } from "@/components/brutal";
-import { useApp, decisionCounts, type LoggedDecision } from "@/lib/store";
+import {
+  useApp, tradeCounts, paperPnl, MODE_LABELS, MODE_COLORS,
+  type TradeRecord, type TradingMode,
+} from "@/lib/store";
 import { WalletButton } from "@/components/wallet-button";
 import { useAccount, useBalance } from "wagmi";
 import { appChain } from "@/lib/wagmi";
 import { formatUnits } from "viem";
 import { useQuery } from "@tanstack/react-query";
-import { Play, Square, Power, Zap, PieChart, Wallet, Trash2, Bot } from "lucide-react";
+import { Play, Square, Power, Zap, PieChart, Wallet, Trash2, Bot, TrendingUp, TrendingDown } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/dashboard/")({
@@ -15,21 +18,37 @@ export const Route = createFileRoute("/dashboard/")({
 
 function Overview() {
   const {
-    running, setRunning, autonomous, setAutonomous, killSwitch, setKill, guardrails,
-    autoExecute, setAutoExecute, decisions, clearDecisions,
+    running, setRunning, autonomous, setAutonomous, killSwitch, setKill,
+    mode, setMode, guardrails, trades, clearTrades,
   } = useApp();
-  const counts = decisionCounts(decisions);
+  const counts = tradeCounts(trades);
   const { address, isConnected } = useAccount();
   const { data: bal } = useBalance({ address, chainId: appChain.id, query: { enabled: isConnected } });
   const bnb = bal ? Number(formatUnits(bal.value, bal.decimals)) : null;
-  // Live BNB Smart Chain context (real RPC reads via the BNB agent layer).
+
   const netCtx = useQuery({
     queryKey: ["bnb-context"],
     queryFn: async () => {
       const r = await fetch("/api/bnb/context");
       return (await r.json()) as { ok: boolean; blockNumber?: number; gasPriceGwei?: number };
     },
-    refetchInterval: 15000,
+    refetchInterval: 15_000,
+  });
+
+  const marketQ = useQuery({
+    queryKey: ["market"],
+    queryFn: async () => {
+      const r = await fetch("/api/market?symbol=BNBUSDT");
+      return (await r.json()) as { configured: boolean; price?: number; priceChange24h?: number };
+    },
+    refetchInterval: 30_000,
+  });
+
+  const currentPrice = marketQ.data?.price ?? null;
+  const pnl = paperPnl(trades, currentPrice);
+  const todayTrades = trades.filter((t) => {
+    const d = new Date(t.at); const n = new Date();
+    return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
   });
 
   return (
@@ -41,6 +60,7 @@ function Overview() {
         </div>
       </div>
 
+      {/* KPI row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Kpi
           label="Wallet (BNB)"
@@ -49,38 +69,67 @@ function Overview() {
           sub={isConnected ? "live on-chain" : "not connected"}
         />
         <Kpi
-          label="Network"
+          label="BNB Price"
           tone="lime"
-          value={`BSC · ${appChain.id}`}
+          value={currentPrice ? `$${currentPrice.toFixed(2)}` : "—"}
           sub={
-            netCtx.data?.ok
-              ? `blk ${netCtx.data.blockNumber} · ${netCtx.data.gasPriceGwei?.toFixed(2)} gwei`
-              : "BNB Smart Chain"
+            marketQ.data?.priceChange24h != null
+              ? `${marketQ.data.priceChange24h >= 0 ? "+" : ""}${marketQ.data.priceChange24h.toFixed(2)}% 24h`
+              : netCtx.data?.ok
+                ? `blk ${netCtx.data.blockNumber} · ${netCtx.data.gasPriceGwei?.toFixed(2)} gwei`
+                : "BSC Testnet"
           }
         />
         <Kpi
-          label="Agent"
+          label="Paper PnL"
           tone="pink"
-          value={killSwitch ? "PAUSED" : running ? "RUNNING" : "STOPPED"}
-          sub={autonomous ? "autonomous" : "manual"}
+          value={pnl !== null ? `${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%` : "—"}
+          sub={`${counts.simulated} simulated trades`}
         />
-        <Kpi label="Allowlist" tone="cyan" value={`${guardrails.allowlist.length}`} sub="tokens enabled" />
+        <Kpi label="Today" tone="cyan" value={`${counts.total}`} sub={`${counts.approved} approved · ${counts.rejected} rejected`} />
       </div>
 
+      {/* Mode selector */}
+      <BrutalCard className="p-5">
+        <div className="font-display uppercase text-sm mb-3">Operating Mode</div>
+        <div className="flex flex-wrap gap-2">
+          {(["analysis", "paper", "testnet", "mainnet"] as TradingMode[]).map((m) => (
+            <button
+              key={m}
+              onClick={() => { setMode(m); toast(`Mode: ${MODE_LABELS[m]}`); }}
+              className={`border-2 border-ink px-3 py-1.5 font-display text-xs uppercase shadow-brutal-sm transition-all ${
+                mode === m
+                  ? `${MODE_COLORS[m]} translate-x-[2px] translate-y-[2px] shadow-none`
+                  : "bg-paper hover:bg-lime"
+              }`}
+            >
+              {MODE_LABELS[m]}
+            </button>
+          ))}
+        </div>
+        <div className="mt-2 text-[11px] font-mono text-ink/60">
+          {mode === "analysis" && "Signals + AI decision are shown. No trade is recorded."}
+          {mode === "paper" && "Full pipeline runs. Trade is logged with real entry price. No transaction submitted."}
+          {mode === "testnet" && "Full pipeline. TWAK submits to BNB testnet (no real money)."}
+          {mode === "mainnet" && "⚠ Full pipeline. Real BNB mainnet. Gated behind kill switch."}
+        </div>
+      </BrutalCard>
+
       <div className="grid lg:grid-cols-3 gap-5">
+        {/* Decision feed */}
         <BrutalCard className="lg:col-span-2 p-5">
           <div className="flex items-center justify-between">
-            <div className="font-display uppercase">Live decision feed</div>
-            {decisions.length > 0 && (
+            <div className="font-display uppercase">Live Trade Feed</div>
+            {trades.length > 0 && (
               <button
-                onClick={() => { clearDecisions(); toast("Decision log cleared"); }}
+                onClick={() => { clearTrades(); toast("Trade log cleared"); }}
                 className="inline-flex items-center gap-1 border-2 border-ink bg-card px-2 py-1 font-display text-[10px] uppercase shadow-brutal-sm hover:bg-pink transition-colors"
               >
                 <Trash2 className="size-3" /> Clear
               </button>
             )}
           </div>
-          {decisions.length === 0 ? (
+          {todayTrades.length === 0 ? (
             <EmptyState
               icon={Bot}
               title={running && !killSwitch ? "Waiting for first decision…" : "Agent is stopped"}
@@ -88,54 +137,74 @@ function Overview() {
                 killSwitch
                   ? "Kill switch is engaged. Release it to let the agent decide."
                   : running
-                    ? "The autonomous agent runs a decision cycle on a timer. The first one appears within a few seconds."
-                    : "Press START (below) and enable Autonomous Mode to let the agent decide on its own."
+                    ? "The autonomous agent runs a decision cycle on a timer."
+                    : "Press START (below) and enable Autonomous Mode."
               }
             />
           ) : (
             <div className="mt-4 space-y-2 max-h-[420px] overflow-y-auto pr-1">
-              {decisions.map((d) => (
-                <DecisionRow key={d.id} d={d} />
+              {todayTrades.map((t) => (
+                <TradeRow key={t.id} t={t} />
               ))}
             </div>
           )}
         </BrutalCard>
 
+        {/* Portfolio panel */}
         <BrutalCard className="p-5">
-          <div className="font-display uppercase">Allocation</div>
+          <div className="font-display uppercase">Portfolio</div>
           {!isConnected ? (
             <EmptyState
               icon={Wallet}
               title="Connect a wallet"
-              body="Token allocation is read from your real on-chain balances."
+              body="Wallet balance is read from on-chain."
               action={<WalletButton />}
             />
           ) : (
-            <EmptyState
-              icon={PieChart}
-              title="Native balance only"
-              body={`${bnb !== null ? bnb.toFixed(4) : "…"} BNB held. Per-token allocation needs a token-list + price source, which isn't wired yet.`}
-            />
+            <div className="mt-4 space-y-3">
+              <div className="border-2 border-ink p-3">
+                <div className="font-display text-xs uppercase text-ink/60">Native BNB</div>
+                <div className="font-display text-2xl mt-1">{bnb !== null ? bnb.toFixed(4) : "…"}</div>
+                {currentPrice && bnb !== null && (
+                  <div className="font-mono text-xs text-ink/60 mt-1">
+                    ≈ ${(bnb * currentPrice).toFixed(2)} USD
+                  </div>
+                )}
+              </div>
+              {pnl !== null && (
+                <div className={`border-2 border-ink p-3 ${pnl >= 0 ? "bg-lime/30" : "bg-pink/30"}`}>
+                  <div className="font-display text-xs uppercase text-ink/60">Paper PnL (avg)</div>
+                  <div className="font-display text-2xl mt-1 flex items-center gap-1">
+                    {pnl >= 0 ? <TrendingUp className="size-5" /> : <TrendingDown className="size-5" />}
+                    {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}%
+                  </div>
+                </div>
+              )}
+              <EmptyState
+                icon={PieChart}
+                title="Token allocation"
+                body="Per-token breakdown needs a price feed for each asset."
+              />
+            </div>
           )}
         </BrutalCard>
       </div>
 
+      {/* Agent controls */}
       <BrutalCard tone="ink" className="p-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <div className="font-display uppercase text-sm text-paper/70">Agent status</div>
             <div className="font-display text-3xl mt-1 text-paper">{killSwitch ? "PAUSED" : running ? "RUNNING" : "STOPPED"}</div>
+            <div className={`inline-block mt-1 border-2 border-paper px-2 py-0.5 font-display text-xs uppercase ${MODE_COLORS[mode]}`}>
+              {MODE_LABELS[mode]}
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <label className="flex items-center gap-2 text-paper font-display text-sm uppercase">
               <input type="checkbox" checked={autonomous} onChange={(e) => setAutonomous(e.target.checked)}
                 className="size-5 accent-pink" />
-              Autonomous Mode
-            </label>
-            <label className="flex items-center gap-2 text-paper font-display text-sm uppercase">
-              <input type="checkbox" checked={autoExecute} onChange={(e) => setAutoExecute(e.target.checked)}
-                className="size-5 accent-lime" />
-              Auto-execute
+              Autonomous
             </label>
             <button onClick={() => { setRunning(true); toast.success("Agent started"); }}
               disabled={killSwitch}
@@ -152,16 +221,11 @@ function Overview() {
             </button>
           </div>
         </div>
-        <div className="mt-4 grid sm:grid-cols-3 gap-3 text-paper">
-          <Mini label="Decisions today" value={String(counts.decisions)} />
-          <Mini label="Trades today" value={String(counts.trades)} />
+        <div className="mt-4 grid sm:grid-cols-4 gap-3 text-paper">
+          <Mini label="Decisions today" value={String(counts.total)} />
+          <Mini label="Approved" value={String(counts.approved)} />
+          <Mini label="Simulated" value={String(counts.simulated)} />
           <Mini label="Rejected" value={String(counts.rejected)} />
-        </div>
-        <div className="mt-2 text-[11px] font-mono text-paper/50">
-          {autoExecute
-            ? "Auto-execute ON — approved non-hold decisions are sent to Trust Wallet automatically."
-            : "Auto-execute OFF — the agent decides and logs, but never sends a trade."}{" "}
-          Counts reset daily. Persisted locally — no fabricated activity.
         </div>
       </BrutalCard>
     </div>
@@ -169,16 +233,8 @@ function Overview() {
 }
 
 function EmptyState({
-  icon: Icon,
-  title,
-  body,
-  action,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  body: string;
-  action?: React.ReactNode;
-}) {
+  icon: Icon, title, body, action,
+}: { icon: React.ComponentType<{ className?: string }>; title: string; body: string; action?: React.ReactNode }) {
   return (
     <div className="mt-4 border-2 border-dashed border-ink/30 p-6 flex flex-col items-center text-center gap-2">
       <Icon className="size-8 text-ink/40" />
@@ -208,45 +264,47 @@ function Mini({ label, value }: { label: string; value: string }) {
   );
 }
 
-function DecisionRow({ d }: { d: LoggedDecision }) {
-  // Status: AI error > rejected > executed > approved (no-exec) > hold.
-  const status = d.error
-    ? { label: "AI ERROR", cls: "bg-orange text-ink" }
-    : !d.approved
-      ? { label: "REJECTED", cls: "bg-destructive text-destructive-foreground" }
-      : d.execution?.ok
-        ? { label: "EXECUTED", cls: "bg-lime text-ink" }
-        : d.execution?.attempted
-          ? { label: "EXEC FAILED", cls: "bg-orange text-ink" }
-          : d.action === "hold"
-            ? { label: "HOLD", cls: "bg-card text-ink" }
-            : { label: "APPROVED", cls: "bg-lime text-ink" };
-  const time = new Date(d.at).toLocaleTimeString();
+function TradeRow({ t }: { t: TradeRecord }) {
+  const statusCls =
+    t.aiError ? "bg-orange text-ink"
+    : t.status === "rejected" ? "bg-destructive text-destructive-foreground"
+    : t.status === "executed" ? "bg-lime text-ink"
+    : t.status === "simulated" ? "bg-cyan text-ink"
+    : "bg-card text-ink";
+
+  const statusLabel =
+    t.aiError ? "AI ERROR"
+    : t.status === "rejected" ? "REJECTED"
+    : t.status === "executed" ? "EXECUTED"
+    : t.status === "simulated" ? "SIMULATED"
+    : "ANALYSIS";
+
+  const time = new Date(t.at).toLocaleTimeString();
 
   return (
     <div className="border-2 border-ink bg-paper p-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2 font-display text-xs uppercase">
-          <span className={`border-2 border-ink px-1.5 py-0.5 ${d.action === "hold" ? "bg-card" : d.action === "buy" ? "bg-lime" : "bg-pink"}`}>
-            {d.action} {d.action !== "hold" ? `${d.tokenIn}→${d.tokenOut}` : ""}
+          <span className={`border-2 border-ink px-1.5 py-0.5 ${t.action === "hold" ? "bg-card" : t.action === "buy" ? "bg-lime" : "bg-pink"}`}>
+            {t.action} {t.action !== "hold" ? `${t.tokenIn}→${t.tokenOut}` : ""}
           </span>
-          <span className="font-mono text-[10px] text-ink/50">{d.source}</span>
+          <span className="font-mono text-[10px] text-ink/50">{t.source} · {MODE_LABELS[t.mode]}</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className={`border-2 border-ink px-1.5 py-0.5 font-display text-[10px] uppercase ${status.cls}`}>{status.label}</span>
+          <span className={`border-2 border-ink px-1.5 py-0.5 font-display text-[10px] uppercase ${statusCls}`}>{statusLabel}</span>
           <span className="font-mono text-[10px] text-ink/50">{time}</span>
         </div>
       </div>
       <div className="mt-1 font-mono text-[11px] text-ink/70">
-        {d.action !== "hold" && <span>size {d.sizePercent}% · conf {d.confidence.toFixed(2)} · </span>}
-        {d.reasoning}
+        {t.action !== "hold" && <span>size {t.sizePercent}% · conf {(t.confidence * 100).toFixed(0)}% · </span>}
+        {t.reasoning}
       </div>
-      {(d.error || d.reason || d.execution?.error || d.execution?.txHash) && (
-        <div className="mt-1 font-mono text-[10px]">
-          {d.error && <span className="text-orange">ai: {d.error} </span>}
-          {!d.error && d.reason && <span className="text-pink">guardrail: {d.reason} </span>}
-          {d.execution?.error && <span className="text-orange">exec: {d.execution.error} </span>}
-          {d.execution?.txHash && <span className="text-ink/60">tx: {String(d.execution.txHash).slice(0, 14)}…</span>}
+      {(t.aiError || t.riskReason || t.txHash || t.entryPrice) && (
+        <div className="mt-1 font-mono text-[10px] flex flex-wrap gap-2">
+          {t.aiError && <span className="text-orange">ai: {t.aiError}</span>}
+          {!t.aiError && t.riskReason && <span className="text-pink">guardrail: {t.riskReason}</span>}
+          {t.entryPrice && <span className="text-ink/60">entry: ${t.entryPrice.toFixed(2)}</span>}
+          {t.txHash && <span className="text-ink/60">tx: {t.txHash.slice(0, 14)}…</span>}
         </div>
       )}
     </div>

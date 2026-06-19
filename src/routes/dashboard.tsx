@@ -1,7 +1,7 @@
 import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
 import { LayoutDashboard, Shield, Sparkles, Activity, Power, ArrowLeft } from "lucide-react";
 import { useAccount } from "wagmi";
-import { useApp } from "@/lib/store";
+import { useApp, MODE_LABELS, MODE_COLORS } from "@/lib/store";
 import { useAgentLoop } from "@/lib/agent/useAgentLoop";
 import { WalletButton } from "@/components/wallet-button";
 import { config } from "@/lib/config";
@@ -21,12 +21,11 @@ const navItems = [
 ];
 
 function DashboardLayout() {
-  const { killSwitch, setKill } = useApp();
+  const { killSwitch, setKill, mode } = useApp();
   const { isConnected } = useAccount();
   const loc = useLocation();
 
-  // Drives the autonomous agent: while running, it decides + (optionally) trades
-  // on a timer. Mounted here so it keeps running across every dashboard tab.
+  // Drives the autonomous agent loop across all tabs.
   useAgentLoop();
 
   return (
@@ -41,13 +40,30 @@ function DashboardLayout() {
               <span className="border-brutal bg-ink text-paper px-2 py-0.5 shadow-brutal-sm">A/</span>
               ALPHATRADE
             </Link>
+            {/* Chain badge */}
             <span className="hidden md:inline-block border-brutal bg-lime px-2 py-0.5 font-mono text-xs shadow-brutal-sm">BSC · {config.chainId}</span>
+            {/* Mode badge — always visible so users never confuse paper with live */}
+            <span className={cn(
+              "border-brutal px-2 py-0.5 font-display text-xs uppercase shadow-brutal-sm",
+              MODE_COLORS[mode],
+            )}>
+              {MODE_LABELS[mode]}
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => { setKill(!killSwitch); toast(killSwitch ? "Kill switch released" : "KILL SWITCH ENGAGED", { description: killSwitch ? "Agent can resume" : "All decisions and execution blocked" }); }}
-              className={cn("inline-flex items-center gap-2 border-brutal px-3 py-2 font-display text-xs uppercase shadow-brutal-sm transition-all",
-                killSwitch ? "bg-destructive text-destructive-foreground" : "bg-card hover:bg-destructive hover:text-destructive-foreground")}>
+              onClick={() => {
+                setKill(!killSwitch);
+                toast(killSwitch ? "Kill switch released" : "KILL SWITCH ENGAGED", {
+                  description: killSwitch ? "Agent can resume" : "All decisions and execution blocked",
+                });
+              }}
+              className={cn(
+                "inline-flex items-center gap-2 border-brutal px-3 py-2 font-display text-xs uppercase shadow-brutal-sm transition-all",
+                killSwitch
+                  ? "bg-destructive text-destructive-foreground"
+                  : "bg-card hover:bg-destructive hover:text-destructive-foreground",
+              )}>
               <Power className="size-4" /> {killSwitch ? "KILLED" : "Kill switch"}
             </button>
             <WalletButton />
@@ -62,8 +78,10 @@ function DashboardLayout() {
               const active = it.exact ? loc.pathname === it.to : loc.pathname.startsWith(it.to);
               return (
                 <Link key={it.to} to={it.to}
-                  className={cn("flex items-center gap-3 border-brutal px-3 py-2 font-display text-sm uppercase shadow-brutal-sm transition-all",
-                    active ? "bg-pink translate-x-[3px] translate-y-[3px] shadow-none" : "bg-paper hover:bg-lime")}>
+                  className={cn(
+                    "flex items-center gap-3 border-brutal px-3 py-2 font-display text-sm uppercase shadow-brutal-sm transition-all",
+                    active ? "bg-pink translate-x-[3px] translate-y-[3px] shadow-none" : "bg-paper hover:bg-lime",
+                  )}>
                   <it.icon className="size-4" /> {it.label}
                 </Link>
               );
@@ -72,7 +90,9 @@ function DashboardLayout() {
           <div className="mt-6 border-brutal bg-ink text-paper p-3">
             <div className="font-display text-xs uppercase">Agent</div>
             <div className="font-display text-2xl mt-1">{killSwitch ? "PAUSED" : "RUNNING"}</div>
-            <div className="font-mono text-[10px] mt-2 text-paper/70">v0.3 · groq · twak</div>
+            <div className={cn("mt-2 border border-paper/30 px-2 py-1 font-display text-[10px] uppercase", MODE_COLORS[mode])}>
+              {MODE_LABELS[mode]}
+            </div>
           </div>
         </aside>
 

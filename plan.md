@@ -1,4 +1,4 @@
-# AlphaTrade — BNB Hack AI Trading Agent Edition
+# AlphaTrade — BNB Hack AI Trading Agent Ed ition
 ## Master Engineering Plan
 
 ---

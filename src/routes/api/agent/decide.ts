@@ -1,131 +1,44 @@
 import { createFileRoute } from "@tanstack/react-router";
-import Groq from "groq-sdk";
-import { z } from "zod";
-import { SYSTEM_PROMPT } from "@/lib/agent/systemPrompt";
-import {
-  decisionSchema,
-  safeHoldFallback,
-  sanitizeStrategy,
-  validateDecision,
-  type Decision,
-  type Guardrails,
-} from "@/lib/agent/guardrailValidator";
-import { rateLimit } from "@/lib/agent/rateLimit";
 
-const requestSchema = z.object({
-  strategy: z.string().max(2000),
-  signals: z.object({
-    fearGreed: z.any().optional(),
-    funding: z.any().optional(),
-    sentiment: z.any().optional(),
-    momentum: z.any().optional(),
-    onchain: z.any().optional(),
-  }),
-  guardrails: z.object({
-    maxPerTradePct: z.number(),
-    dailyTradeCap: z.number(),
-    dailySpendLimitUsd: z.number(),
-    maxDrawdownPct: z.number(),
-    slippagePct: z.number(),
-    minConfidence: z.number(),
-    allowlist: z.array(z.string()),
-    killSwitch: z.boolean(),
-    tradesToday: z.number().default(0),
-    spentTodayUsd: z.number().default(0),
-    drawdownPct: z.number().default(0),
-    portfolioValueUsd: z.number().default(0),
-  }),
-  sessionId: z.string().optional(),
-});
-
+// POST /api/agent/decide — thin proxy to the Python Agent (Flask, port 5000).
+// All guardrail validation, Groq AI calls, rate limiting, and SLM explanation
+// generation happen in the Agent/ folder. The frontend has zero AI logic.
 export const Route = createFileRoute("/api/agent/decide")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const ip = request.headers.get("x-forwarded-for") ?? "anon";
+        const agentUrl = process.env.AGENT_API_URL ?? "http://localhost:5000";
         const body = await request.json().catch(() => null);
-        const parsed = requestSchema.safeParse(body);
-        if (!parsed.success) {
-          return Response.json({ error: "Invalid request", issues: parsed.error.issues }, { status: 400 });
+        if (!body) {
+          return Response.json({ error: "Invalid request body" }, { status: 400 });
         }
-
-        const key = parsed.data.sessionId ?? ip;
-        const rl = rateLimit(key);
-        if (!rl.ok) {
-          return Response.json({ error: "Rate limit exceeded", retryInMs: rl.retryInMs }, { status: 429 });
-        }
-
-        const g = parsed.data.guardrails as Guardrails;
-        // Kill switch short-circuits before any Groq call or x402 payment.
-        if (g.killSwitch) {
-          const hold = safeHoldFallback("Kill switch engaged — agent paused.");
-          const reason = "Kill switch is engaged — all execution blocked";
-          return Response.json({
-            decision: hold,
-            validation: { approved: false, decision: hold, reason, reasons: [reason] },
-            raw: null,
+        try {
+          const upstream = await fetch(`${agentUrl}/api/agent/decide`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(30_000),
           });
+          const data = await upstream.json();
+          return Response.json(data, { status: upstream.status });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Agent unreachable";
+          return Response.json(
+            {
+              decision: {
+                action: "hold",
+                tokenIn: "USDT",
+                tokenOut: "USDT",
+                sizePercent: 0,
+                confidence: 0,
+                reasoning: "Python Agent is offline — defaulting to hold.",
+              },
+              validation: { approved: false, reason: `Agent offline: ${msg}`, reasons: [`Agent offline: ${msg}`] },
+              error: `Python Agent unreachable: ${msg}. Start it with: cd Agent && python wsgi.py`,
+            },
+            { status: 503 },
+          );
         }
-
-        const strategy = sanitizeStrategy(parsed.data.strategy);
-        const apiKey = process.env.GROQ_API_KEY;
-
-        let decision: Decision;
-        let raw: string | null = null;
-        let error: string | null = null;
-
-        if (!apiKey) {
-          // No key configured — be honest, never fabricate a tradeable decision.
-          decision = safeHoldFallback("GROQ_API_KEY not configured — AI decisions disabled.");
-          error = "GROQ_API_KEY not configured on the server — AI decisions are disabled.";
-        } else {
-          try {
-            const groq = new Groq({ apiKey });
-            const completion = await groq.chat.completions.create({
-              model: "llama-3.3-70b-versatile",
-              temperature: 0.2,
-              response_format: { type: "json_object" },
-              messages: [
-                { role: "system", content: SYSTEM_PROMPT },
-                {
-                  role: "user",
-                  content: JSON.stringify({
-                    strategy,
-                    allowlist: g.allowlist,
-                    guardrails: {
-                      maxPerTradePct: g.maxPerTradePct,
-                      minConfidence: g.minConfidence,
-                      slippagePct: g.slippagePct,
-                    },
-                    signals: parsed.data.signals,
-                  }),
-                },
-              ],
-            });
-            raw = completion.choices[0]?.message?.content ?? "";
-            const json = JSON.parse(raw);
-            const v = decisionSchema.safeParse(json);
-            if (v.success) {
-              decision = v.data;
-            } else {
-              decision = safeHoldFallback("Schema validation failed.");
-              error = "The AI returned malformed output — held as a precaution.";
-            }
-          } catch (err) {
-            console.error("Groq error", err);
-            decision = safeHoldFallback("Upstream AI error — defaulting to hold.");
-            const status = (err as { status?: number })?.status;
-            error =
-              status === 401
-                ? "Groq rejected the API key (401 Invalid API Key). Set a valid GROQ_API_KEY and restart."
-                : `Upstream AI error${status ? ` (${status})` : ""} — the model call failed, so the agent held.`;
-          }
-        }
-
-        // `error` is non-null only when the AI call failed (auth/upstream/schema).
-        // A hold from a *failed* call must not be presented as a successful decision.
-        const validation = validateDecision(decision, g);
-        return Response.json({ decision, validation, raw, error });
       },
     },
   },

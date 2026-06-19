@@ -115,6 +115,45 @@ function Overview() {
         </div>
       </BrutalCard>
 
+{/* Agent controls */}
+      <BrutalCard tone="ink" className="p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div className="font-display uppercase text-sm text-paper/70">Agent status</div>
+            <div className="font-display text-3xl mt-1 text-paper">{killSwitch ? "PAUSED" : running ? "RUNNING" : "STOPPED"}</div>
+            <div className={`inline-block mt-1 border-2 border-paper px-2 py-0.5 font-display text-xs uppercase ${MODE_COLORS[mode]}`}>
+              {MODE_LABELS[mode]}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-paper font-display text-sm uppercase">
+              <input type="checkbox" checked={autonomous} onChange={(e) => setAutonomous(e.target.checked)}
+                className="size-5 accent-pink" />
+              Autonomous
+            </label>
+            <button onClick={() => { setRunning(true); toast.success("Agent started"); }}
+              disabled={killSwitch}
+              className="inline-flex items-center gap-2 border-2 border-paper bg-lime text-ink px-3 py-2 font-display text-xs uppercase shadow-[5px_5px_0_0_#f5f1e0] disabled:opacity-40">
+              <Play className="size-4" /> Start
+            </button>
+            <button onClick={() => { setRunning(false); toast("Agent stopped"); }}
+              className="inline-flex items-center gap-2 border-2 border-paper bg-paper text-ink px-3 py-2 font-display text-xs uppercase shadow-[5px_5px_0_0_#c8ff2e]">
+              <Square className="size-4" /> Stop
+            </button>
+            <button onClick={() => { setKill(!killSwitch); toast(killSwitch ? "Kill switch released" : "KILL SWITCH ENGAGED"); }}
+              className="inline-flex items-center gap-2 border-2 border-paper bg-destructive text-destructive-foreground px-3 py-2 font-display text-xs uppercase shadow-[5px_5px_0_0_#ff2ea6]">
+              <Power className="size-4" /> Kill Switch
+            </button>
+          </div>
+        </div>
+        <div className="mt-4 grid sm:grid-cols-4 gap-3 text-paper">
+          <Mini label="Decisions today" value={String(counts.total)} />
+          <Mini label="Approved" value={String(counts.approved)} />
+          <Mini label="Simulated" value={String(counts.simulated)} />
+          <Mini label="Rejected" value={String(counts.rejected)} />
+        </div>
+      </BrutalCard>
+
       <div className="grid lg:grid-cols-3 gap-5">
         {/* Decision feed */}
         <BrutalCard className="lg:col-span-2 p-5">
@@ -149,6 +188,9 @@ function Overview() {
             </div>
           )}
         </BrutalCard>
+
+
+
 
         {/* Portfolio panel */}
         <BrutalCard className="p-5">
@@ -190,44 +232,7 @@ function Overview() {
         </BrutalCard>
       </div>
 
-      {/* Agent controls */}
-      <BrutalCard tone="ink" className="p-5">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <div className="font-display uppercase text-sm text-paper/70">Agent status</div>
-            <div className="font-display text-3xl mt-1 text-paper">{killSwitch ? "PAUSED" : running ? "RUNNING" : "STOPPED"}</div>
-            <div className={`inline-block mt-1 border-2 border-paper px-2 py-0.5 font-display text-xs uppercase ${MODE_COLORS[mode]}`}>
-              {MODE_LABELS[mode]}
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-2 text-paper font-display text-sm uppercase">
-              <input type="checkbox" checked={autonomous} onChange={(e) => setAutonomous(e.target.checked)}
-                className="size-5 accent-pink" />
-              Autonomous
-            </label>
-            <button onClick={() => { setRunning(true); toast.success("Agent started"); }}
-              disabled={killSwitch}
-              className="inline-flex items-center gap-2 border-2 border-paper bg-lime text-ink px-3 py-2 font-display text-xs uppercase shadow-[5px_5px_0_0_#f5f1e0] disabled:opacity-40">
-              <Play className="size-4" /> Start
-            </button>
-            <button onClick={() => { setRunning(false); toast("Agent stopped"); }}
-              className="inline-flex items-center gap-2 border-2 border-paper bg-paper text-ink px-3 py-2 font-display text-xs uppercase shadow-[5px_5px_0_0_#c8ff2e]">
-              <Square className="size-4" /> Stop
-            </button>
-            <button onClick={() => { setKill(!killSwitch); toast(killSwitch ? "Kill switch released" : "KILL SWITCH ENGAGED"); }}
-              className="inline-flex items-center gap-2 border-2 border-paper bg-destructive text-destructive-foreground px-3 py-2 font-display text-xs uppercase shadow-[5px_5px_0_0_#ff2ea6]">
-              <Power className="size-4" /> Kill Switch
-            </button>
-          </div>
-        </div>
-        <div className="mt-4 grid sm:grid-cols-4 gap-3 text-paper">
-          <Mini label="Decisions today" value={String(counts.total)} />
-          <Mini label="Approved" value={String(counts.approved)} />
-          <Mini label="Simulated" value={String(counts.simulated)} />
-          <Mini label="Rejected" value={String(counts.rejected)} />
-        </div>
-      </BrutalCard>
+      
     </div>
   );
 }

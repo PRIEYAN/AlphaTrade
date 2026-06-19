@@ -16,6 +16,7 @@ import { Route as DashboardStrategyRouteImport } from './routes/dashboard.strate
 import { Route as DashboardGuardrailsRouteImport } from './routes/dashboard.guardrails'
 import { Route as DashboardActivityRouteImport } from './routes/dashboard.activity'
 import { Route as ApiSignalsRouteImport } from './routes/api/signals'
+import { Route as ApiMarketRouteImport } from './routes/api/market'
 import { Route as ApiTwakSwapRouteImport } from './routes/api/twak/swap'
 import { Route as ApiTwakRegisterRouteImport } from './routes/api/twak/register'
 import { Route as ApiTwakPingRouteImport } from './routes/api/twak/ping'
@@ -59,6 +60,11 @@ const ApiSignalsRoute = ApiSignalsRouteImport.update({
   path: '/api/signals',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMarketRoute = ApiMarketRouteImport.update({
+  id: '/api/market',
+  path: '/api/market',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiTwakSwapRoute = ApiTwakSwapRouteImport.update({
   id: '/api/twak/swap',
   path: '/api/twak/swap',
@@ -98,6 +104,7 @@ const ApiAgentDecideRoute = ApiAgentDecideRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRouteWithChildren
+  '/api/market': typeof ApiMarketRoute
   '/api/signals': typeof ApiSignalsRoute
   '/dashboard/activity': typeof DashboardActivityRoute
   '/dashboard/guardrails': typeof DashboardGuardrailsRoute
@@ -113,6 +120,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/market': typeof ApiMarketRoute
   '/api/signals': typeof ApiSignalsRoute
   '/dashboard/activity': typeof DashboardActivityRoute
   '/dashboard/guardrails': typeof DashboardGuardrailsRoute
@@ -130,6 +138,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRouteWithChildren
+  '/api/market': typeof ApiMarketRoute
   '/api/signals': typeof ApiSignalsRoute
   '/dashboard/activity': typeof DashboardActivityRoute
   '/dashboard/guardrails': typeof DashboardGuardrailsRoute
@@ -148,6 +157,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/dashboard'
+    | '/api/market'
     | '/api/signals'
     | '/dashboard/activity'
     | '/dashboard/guardrails'
@@ -163,6 +173,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/api/market'
     | '/api/signals'
     | '/dashboard/activity'
     | '/dashboard/guardrails'
@@ -179,6 +190,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/dashboard'
+    | '/api/market'
     | '/api/signals'
     | '/dashboard/activity'
     | '/dashboard/guardrails'
@@ -196,6 +208,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DashboardRoute: typeof DashboardRouteWithChildren
+  ApiMarketRoute: typeof ApiMarketRoute
   ApiSignalsRoute: typeof ApiSignalsRoute
   ApiAgentDecideRoute: typeof ApiAgentDecideRoute
   ApiBnbContextRoute: typeof ApiBnbContextRoute
@@ -255,6 +268,13 @@ declare module '@tanstack/react-router' {
       path: '/api/signals'
       fullPath: '/api/signals'
       preLoaderRoute: typeof ApiSignalsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/market': {
+      id: '/api/market'
+      path: '/api/market'
+      fullPath: '/api/market'
+      preLoaderRoute: typeof ApiMarketRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/twak/swap': {
@@ -330,6 +350,7 @@ const DashboardRouteWithChildren = DashboardRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardRoute: DashboardRouteWithChildren,
+  ApiMarketRoute: ApiMarketRoute,
   ApiSignalsRoute: ApiSignalsRoute,
   ApiAgentDecideRoute: ApiAgentDecideRoute,
   ApiBnbContextRoute: ApiBnbContextRoute,

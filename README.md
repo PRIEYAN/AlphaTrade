@@ -59,65 +59,73 @@ A large language model continuously monitors live market conditions and suggests
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Browser (React / TanStack Start)              │
-│                                                                       │
-│   Landing Page  ·  Overview  ·  Strategy+AI  ·  Guardrails  ·  Activity │
-│          │                                                            │
-│   Zustand Store (localStorage)  ←  Trade Audit Trail                 │
-└──────────────────────────┬────────────────────────────────────────────┘
-                           │  HTTP proxy  /api/agent/decide
-                           │             /api/market
-                           ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│              Python Agent  (Flask · port 5000)                        │
-│                                                                       │
-│  ┌─────────────────┐   ┌────────────────────┐   ┌────────────────┐  │
-│  │  Groq Service   │   │   Binance Service  │   │  CMC Service   │  │
-│  │  Llama 3.3-70B  │   │  Price · OHLCV     │   │  Fear & Greed  │  │
-│  │  Trading LLM    │   │  Orderbook Imbal.  │   │  Sentiment     │  │
-│  └────────┬────────┘   └────────────────────┘   └────────────────┘  │
-│           │                                                           │
-│           ▼                                                           │
-│  ┌─────────────────────────────────────────────────┐                │
-│  │             Risk Engine (Guardrails)             │                │
-│  │  • Max % per trade      • Daily trade cap        │                │
-│  │  • Daily spend limit    • Max drawdown           │                │
-│  │  • Slippage tolerance   • Min AI confidence      │                │
-│  │  • Token allowlist      • Kill switch            │                │
-│  └──────────────────────┬──────────────────────────┘                │
-│                          │ APPROVED                                   │
-│           ┌──────────────┼──────────────┐                            │
-│           ▼              ▼              ▼                             │
-│      REJECTED        ANALYSIS        EXECUTE                          │
-│                                          │                            │
-│                   ┌──────────────────────┘                           │
-│                   │  SLM Explainer (Llama 3.1-8B)                    │
-│                   │  Post-decision plain-English summary              │
-│                   └──────────────────────────────────────────────────┘
-└─────────────────────────────────────────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Execution Layer                                │
-│                                                                       │
-│   Paper Mode    →  Log entry price, no transaction                   │
-│   Testnet Mode  →  TWAK signs swap → Amber DEX → BSC Testnet        │
-│   Mainnet Mode  →  TWAK signs swap → Amber DEX → BNB Mainnet        │
-│                        │                                              │
-│                    PancakeSwap (via Amber DEX Aggregator)             │
-└─────────────────────────────────────────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                     On-Chain & Identity Layer                         │
-│                                                                       │
-│   BNB AI Agent SDK  →  ERC-8004 agent identity registration         │
-│   ERC-8183          →  Job server (agent_server.py · port 8003)     │
-│   CompetitionRegistry →  Smart contract on BSC Testnet (Hardhat)    │
-│   BscScan API        →  Transaction history reader                   │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph Browser["🖥️  Frontend · React · TanStack Start"]
+        direction TB
+        UI["Dashboard UI\nOverview · Strategy · Guardrails · Activity"]
+        Store[("Zustand Store\n📦 Trade Audit Trail\n(localStorage)")]
+        UI <-->|"reads / writes"| Store
+    end
+
+    subgraph DataSources["📡  Live Data Sources"]
+        direction LR
+        CMC["CoinMarketCap AI Agent\nFear & Greed · Funding · Sentiment"]
+        Binance["Binance Public API\nPrice · OHLCV · Orderbook Imbalance"]
+        RPC["BNB Chain RPC\nBlock Number · Gas Price"]
+    end
+
+    subgraph PythonAgent["🐍  Python Agent · Flask · Port 5000"]
+        direction TB
+        Snapshot["Market Snapshot Builder\n(aggregates all sources)"]
+
+        subgraph LLMLayer["Decision Engine"]
+            Groq["Groq · Llama 3.3-70B\n🤖 Trading Decision\n→ action · tokenIn · tokenOut\n→ sizePercent · confidence · reasoning"]
+        end
+
+        subgraph RiskLayer["Risk Engine · Deterministic Python"]
+            Guard["Guardrail Validator\n✅ Max % per trade\n✅ Daily trade cap\n✅ Daily spend limit\n✅ Max drawdown\n✅ Min AI confidence\n✅ Token allowlist\n✅ Kill switch check"]
+        end
+
+        subgraph ExplainLayer["Explainability Layer"]
+            SLM["Groq · Llama 3.1-8B\n📝 SLM Explainer\nPost-decision plain-English summary\n(zero influence on execution)"]
+        end
+
+        Snapshot --> Groq
+        Groq -->|"Structured JSON"| Guard
+        Guard -->|"APPROVED"| SLM
+    end
+
+    subgraph ExecLayer["⚡  Execution Layer"]
+        direction LR
+        Paper["📄 Paper Trading\nLog entry price\nNo transaction"]
+        TWAK["🔑 Trust Wallet Agent Kit\nHMAC-SHA256 signed swap\nAmber DEX Aggregator"]
+    end
+
+    subgraph OnChain["⛓️  BNB Smart Chain"]
+        direction LR
+        PCS["PancakeSwap\nDEX Liquidity"]
+        Registry["CompetitionRegistry\nSmart Contract"]
+        Explorer["BscScan\nTx Explorer"]
+    end
+
+    CMC -->|"signals"| Snapshot
+    Binance -->|"price · orderbook"| Snapshot
+    RPC -->|"block · gas"| Snapshot
+
+    UI -->|"POST /api/agent/decide"| Snapshot
+    UI -->|"GET /api/market"| Binance
+
+    Guard -->|"REJECTED → record"| Store
+    SLM -->|"Paper Mode"| Paper
+    SLM -->|"Testnet / Mainnet"| TWAK
+
+    Paper -->|"trade record"| Store
+    TWAK -->|"signed swap"| PCS
+    PCS -->|"tx hash"| Store
+
+    TWAK -.->|"register"| Registry
+    Explorer -->|"BscScan API\ntx history"| UI
 ```
 
 ---
@@ -255,7 +263,7 @@ The BNB AI Agent SDK provides on-chain identity and job infrastructure:
 
 - **ERC-8004** — on-chain agent identity registration. AlphaTrade registers itself as a verifiable on-chain agent, establishing a cryptographic identity on BNB Chain.
 - **ERC-8183** — job server protocol. `agent_server.py` runs a compliant job server (port 8003 via uvicorn) that allows external systems to submit trading jobs to the agent in a standardised format.
-- **CompetitionRegistry** — a Hardhat-deployed smart contract on BSC Testnet that records agent registration for the hackathon competition. Verified on BscScan.
+- **CompetitionRegistry** — a Hardhat-deployed smart contract on BSC Testnet that records agent registration on-chain. Verified on BscScan.
 
 ---
 
@@ -506,10 +514,10 @@ The Python Agent reads the same `.env` file placed in the project root. Ensure `
 
 ## PRIEYAN SANJAY E
 
-*BNB Chain AI Agent Hackathon*
+*Autonomous AI Trading · BNB Smart Chain*
 
 ---
 
-*AlphaTrade is a hackathon project demonstrating autonomous AI trading on BNB Smart Chain. It is not financial advice. Paper Trading and Testnet modes exist precisely so the system can be evaluated safely without real capital at risk.*
+*AlphaTrade is an autonomous trading system built on BNB Smart Chain. It is not financial advice. Paper Trading and Testnet modes exist precisely so the system can be evaluated safely without real capital at risk.*
 
 </div>

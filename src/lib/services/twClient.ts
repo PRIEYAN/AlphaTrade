@@ -1,18 +1,16 @@
 // =============================================================================
 // Trust Wallet Agent Kit (TWAK) — low-level signed HTTP client. SERVER ONLY.
 //
-// Authentication recipe (verified against the official docs:
-// https://developer.trustwallet.com/developer/agent-sdk/authentication):
+// Authentication (from portal.trustwallet.com docs):
 //
-//   stringToSign = METHOD + PATH + QUERY + ACCESS_ID + NONCE + DATE
-//                  (concatenated, NO separator between fields)
+//   stringToSign = METHOD;PATH;QUERY;ACCESS_ID;NONCE;DATE   (semicolons)
 //   signature    = base64( HMAC_SHA256(stringToSign, HMAC_SECRET) )
 //
-// Sent on every request as headers:
-//   X-TW-Credential : ACCESS_ID
-//   X-TW-Nonce      : NONCE   (unique random string, anti-replay)
-//   X-TW-Date       : DATE    (ISO-8601 "YYYY-MM-DDTHH:MM:SSZ", ±5 min window)
-//   Authorization   : signature
+// Required headers on every request:
+//   X-TW-CREDENTIAL : ACCESS_ID
+//   X-TW-NONCE      : random UUIDv4 (unique per request, anti-replay)
+//   X-TW-DATE       : RFC 1123 date, always GMT  e.g. "Thu, 27 Feb 2026 12:00:00 GMT"
+//   Authorization   : HMAC-SHA256 Signature=<base64>
 //
 // The HMAC secret must NEVER reach the browser. This module reads it from
 // process.env and hard-fails if it is ever evaluated in a browser bundle.
@@ -26,18 +24,16 @@ if (typeof window !== "undefined") {
 }
 
 const BASE_URL = (process.env.TWAK_API_URL || "https://tws.trustwallet.com").replace(/\/+$/, "");
-// Accept either the dialog's names (TW_*) or the TWAK_*-prefixed variants.
 const ACCESS_ID = process.env.TW_ACCESS_ID || process.env.TWAK_ACCESS_ID || "";
 const HMAC_SECRET = process.env.TW_HMAC_SECRET || process.env.TWAK_HMAC_SECRET || "";
 
-/** True when both credentials are present (server-side). */
 export function twakConfigured(): boolean {
   return Boolean(ACCESS_ID && HMAC_SECRET);
 }
 
-/** TWAK expects seconds-precision ISO-8601 (no milliseconds). */
-function isoSeconds(): string {
-  return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+/** RFC 1123 date string always in GMT, as required by the TWAK docs. */
+function rfc1123Now(): string {
+  return new Date().toUTCString(); // "Thu, 27 Feb 2026 12:00:00 GMT"
 }
 
 export class TwakError extends Error {
@@ -53,9 +49,9 @@ export class TwakError extends Error {
 
 type SignedRequest = {
   method: "GET" | "POST" | "DELETE";
-  /** Path WITHOUT query string, e.g. "/v1/wallet/balance". */
+  /** Path WITHOUT query string, e.g. "/v1/search/assets". */
   path: string;
-  /** Query params; the same encoded bytes are used for signing and the URL. */
+  /** Query params — same encoded bytes used for signing and the URL. */
   query?: Record<string, string | number | undefined | null>;
   /** JSON body for POST/DELETE. */
   body?: unknown;
@@ -75,26 +71,26 @@ export async function twSignedFetch<T = unknown>({
     );
   }
 
-  // Build the query string ONCE and reuse the identical bytes for both the
-  // signature and the URL — otherwise the server-recomputed signature won't
-  // match and the request is rejected.
+  // Build query string once — reuse exact bytes for both signing and URL.
   const sp = new URLSearchParams();
   for (const [k, v] of Object.entries(query ?? {})) {
     if (v !== undefined && v !== null && v !== "") sp.append(k, String(v));
   }
   const qs = sp.toString();
 
-  const nonce = randomUUID().replace(/-/g, "");
-  const date = isoSeconds();
-  const stringToSign = `${method}${path}${qs}${ACCESS_ID}${nonce}${date}`;
+  const nonce = randomUUID(); // keep hyphens — docs show a full UUIDv4
+  const date = rfc1123Now();
+
+  // Signing string: METHOD;PATH;QUERY;ACCESS_ID;NONCE;DATE  (semicolon-separated)
+  const stringToSign = [method, path, qs, ACCESS_ID, nonce, date].join(";");
   const signature = createHmac("sha256", HMAC_SECRET).update(stringToSign).digest("base64");
 
   const url = `${BASE_URL}${path}${qs ? `?${qs}` : ""}`;
   const headers: Record<string, string> = {
-    "X-TW-Credential": ACCESS_ID,
-    "X-TW-Nonce": nonce,
-    "X-TW-Date": date,
-    Authorization: signature,
+    "X-TW-CREDENTIAL": ACCESS_ID,
+    "X-TW-NONCE": nonce,
+    "X-TW-DATE": date,
+    Authorization: `HMAC-SHA256 Signature=${signature}`,
   };
   if (body !== undefined) headers["Content-Type"] = "application/json";
 
@@ -109,7 +105,7 @@ export async function twSignedFetch<T = unknown>({
   try {
     parsed = text ? JSON.parse(text) : null;
   } catch {
-    /* non-JSON response: keep the raw text */
+    /* non-JSON response: keep raw text */
   }
 
   if (!res.ok) {

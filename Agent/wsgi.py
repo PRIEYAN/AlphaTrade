@@ -7,4 +7,5 @@ app = create_app()
 if __name__ == "__main__":
     cfg = app.extensions["agent_config"]
     debug_mode = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
-    app.run(host=cfg.HOST, port=cfg.PORT, debug=debug_mode)
+    port = int(os.environ.get("PORT", cfg.PORT))
+    app.run(host="0.0.0.0", port=port, debug=debug_mode)

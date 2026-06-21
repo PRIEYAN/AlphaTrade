@@ -35,7 +35,7 @@ class Config:
     )
 
     # Server
-    HOST: str = os.environ.get("HOST", "127.0.0.1")
+    HOST: str = os.environ.get("HOST", "0.0.0.0")
     PORT: int = int(os.environ.get("PORT", "5000"))
     CORS_ORIGINS: str = os.environ.get(
         "CORS_ORIGINS",
